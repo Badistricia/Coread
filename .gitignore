@@ -1,0 +1,114 @@
+# ==========================================================================
+# Dependencies & Package Managers
+# ==========================================================================
+node_modules/
+jspm_packages/
+web_modules/
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==========================================================================
+# Caches, Linting & Testing Caches
+# ==========================================================================
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.cache
+.eslintcache
+.stylelintcache
+htmlcov/
+.nosetests
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.mpc_cache/
+.reasonix/
+
+# ==========================================================================
+# IDEs & Text Editors Configuration
+# ==========================================================================
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+.project
+.classpath
+.settings/
+
+# ==========================================================================
+# OS Generated Files
+# ==========================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Icon?
+
+# ==========================================================================
+# Local Secrets & Environment Settings (Do NOT commit)
+# ==========================================================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+backend/.env
+
+# ==========================================================================
+# Database Files
+# ==========================================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================================================================
+# Log Files
+# ==========================================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==========================================================================
+# Root-Level Local Design Notes, Screenshots & Test Books
+# ==========================================================================
+/*.txt
+/*.png
+/*.html
+/明朝那些事儿*

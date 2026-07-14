@@ -1,0 +1,407 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   0. 全局根部环境自适应 (Viewport & Background Synchronization)
+   ========================================================================== */
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg-app, #f5f0e8);
+  color: var(--color-text-app, #3d2f21);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ==========================================================================
+   1. 伴侣性格品牌基础高亮变量 (Companion Core Highlights)
+   ========================================================================== */
+
+/* 默认 / 陆沉 (luchen) */
+:root, .theme-luchen {
+  --color-primary: #d97706; /* 琥珀金 */
+  --color-primary-hover: #b45309;
+  --color-primary-light: #fef3c7;
+  --color-bg-bubble-user: #fef3c7;
+  --color-text-bubble-user: #78350f;
+  --color-accent: #78350f;
+  --color-highlight-mark: rgba(251, 191, 36, 0.35);
+  --color-highlight-border: #d97706;
+}
+
+/* 萧逸 (xiaoyi) */
+.theme-xiaoyi {
+  --color-primary: #2563eb; /* 宝石蓝 */
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #dbeafe;
+  --color-bg-bubble-user: #dbeafe;
+  --color-text-bubble-user: #1e3a8a;
+  --color-accent: #1e3a8a;
+  --color-highlight-mark: rgba(96, 165, 250, 0.35);
+  --color-highlight-border: #2563eb;
+}
+
+/* 齐司礼 (qisili) */
+.theme-qisili {
+  --color-primary: #2f5c47; /* 绿 */
+  --color-primary-hover: #1e3d2f;
+  --color-primary-light: #eaf2ec;
+  --color-bg-bubble-user: #eaf2ec;
+  --color-text-bubble-user: #1e3d2f;
+  --color-accent: #2f5c47;
+  --color-highlight-mark: rgba(47, 92, 71, 0.25);
+  --color-highlight-border: #2f5c47;
+}
+
+/* 查理苏 (chaming/chalisu) */
+.theme-chaming, .theme-chalisu {
+  --color-primary: #5b21b6; /* 皇家紫 */
+  --color-primary-hover: #4c1d95;
+  --color-primary-light: #f3e8ff;
+  --color-bg-bubble-user: #f3e8ff;
+  --color-text-bubble-user: #4c1d95;
+  --color-accent: #5b21b6;
+  --color-highlight-mark: rgba(91, 33, 182, 0.25);
+  --color-highlight-border: #5b21b6;
+}
+
+/* 夏鸣星 (xiamingxing) */
+.theme-xiamingxing {
+  --color-primary: #ea580c; /* 橙 */
+  --color-primary-hover: #ca8a04;
+  --color-primary-light: #fef3c7;
+  --color-bg-bubble-user: #fef3c7;
+  --color-text-bubble-user: #7c2d12;
+  --color-accent: #ea580c;
+  --color-highlight-mark: rgba(234, 88, 12, 0.25);
+  --color-highlight-border: #ea580c;
+}
+
+
+/* ==========================================================================
+   2. 主题背景配色方案 (Reading Theme Configs)
+   ========================================================================== */
+
+/* A · 暖金书卷 (read-theme-a) */
+.read-theme-a {
+  --color-bg-app: #f5f0e8;      /* 外部暖米白底 */
+  --color-text-app: #3d2f21;    /* 外部排版暗棕字 */
+  --color-read-bg: #fdfaf4;     /* 独立书页底色 / 对话区底 */
+  --color-read-text: #2c2520;   /* 深暖棕字 */
+  --color-read-border: #ebdcb9; /* 浅沙色边框 */
+  --color-read-title: #3d2f21;
+  --color-read-divider: #ebdcb9;
+  --color-bg-bubble-ai: #ebdcb9; /* AI 泡底色 */
+  --color-text-bubble-ai: #2c2520;
+  
+  /* 融入点缀色 */
+  --color-primary: #c9a96e;     /* 浅金点缀 */
+  --color-primary-hover: #bda260;
+  --color-bg-bubble-user: #fef3c7;
+  --color-text-bubble-user: #78350f;
+}
+
+/* B · 冷灰极简 (read-theme-b) */
+.read-theme-b {
+  --color-bg-app: #f2f3f5;      /* 外部浅冷灰 */
+  --color-text-app: #09090b;    /* 外部排版黑字 */
+  --color-read-bg: #ffffff;     /* 独立书本白色 / 对话区底 */
+  --color-read-text: #2c2c2c;   /* 护眼深灰 */
+  --color-read-border: #e4e4e7;
+  --color-read-title: #09090b;
+  --color-read-divider: #e4e4e7;
+  --color-bg-bubble-ai: #f4f4f5;
+  --color-text-bubble-ai: #2c2c2c;
+  
+  /* 融入点缀色 */
+  --color-primary: #8a9bb0;     /* 雾蓝灰 */
+  --color-primary-hover: #7b8ca0;
+  --color-bg-bubble-user: #e2e8f0;
+  --color-text-bubble-user: #334155;
+}
+
+/* C · 奶茶温柔 (read-theme-c) */
+.read-theme-c {
+  --color-bg-app: #f7f2ec;      /* 外部极浅奶茶 */
+  --color-text-app: #2e2a25;    /* 外部奶茶棕字 */
+  --color-read-bg: #fbf8f3;     /* 独立书卡浅奶茶 / 对话区底 */
+  --color-read-text: #332d29;   /* 护眼奶茶深褐 */
+  --color-read-border: #eedecf;
+  --color-read-title: #2e2a25;
+  --color-read-divider: #eedecf;
+  --color-bg-bubble-ai: #f7eedf;
+  --color-text-bubble-ai: #332d29;
+  
+  /* 融入点缀色 */
+  --color-primary: #d4956a;     /* 淡橙棕 */
+  --color-primary-hover: #c4855a;
+  --color-bg-bubble-user: #faebd7;
+  --color-text-bubble-user: #8b4513;
+}
+
+/* D · 夜间暗黑 (read-theme-dark) */
+.read-theme-dark {
+  --color-bg-app: #121214;      /* 外部暗黑底 */
+  --color-text-app: #f4f4f5;    /* 外部排版白字 */
+  --color-read-bg: #1c1c1e;     /* 独立书页卡片深灰 */
+  --color-read-text: #a1a1aa;   /* 锌灰字 */
+  --color-read-border: #2c2c2e;
+  --color-read-title: #f4f4f5;
+  --color-read-divider: #2c2c2e;
+  --color-bg-bubble-ai: #2c2c2e;
+  --color-text-bubble-ai: #f4f4f5;
+  
+  /* 暗黑下默认用深色按钮 */
+  --color-primary: #52525b;
+  --color-primary-hover: #3f3f46;
+  --color-bg-bubble-user: #3f3f46;
+  --color-text-bubble-user: #f4f4f5;
+}
+
+
+/* ==========================================================================
+   3. 专属角色配色方案 (read-theme-exclusive) —— 适配各男主
+   ========================================================================== */
+
+/* 默认兜底 */
+.read-theme-exclusive {
+  --color-bg-app: #f4f3f1;
+  --color-text-app: #24211f;
+  --color-read-bg: #f9f9fb;
+  --color-read-text: #2c2c2c;
+  --color-read-border: #e4e4e7;
+  --color-read-title: #18181b;
+  --color-read-divider: #e4e4e7;
+  --color-bg-bubble-ai: #3f3f46;
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #f4f4f5;
+  --color-text-bubble-user: #18181b;
+  --color-primary: #18181b;
+  --color-primary-hover: #27272a;
+}
+
+/* 陆沉专属 · 幻惑之瞳 */
+.theme-luchen.read-theme-exclusive {
+  --color-bg-app: #f2e7e5;      /* 浅玫瑰雾面底，避免整页发黑 */
+  --color-text-app: #3d1f25;    /* 外部文字深酒红 */
+  --color-read-bg: #f9f3f0;     /* 书页底米白 */
+  --color-read-text: #2a1a1a;   /* 深暖棕正文字 */
+  --color-read-border: #ebd5d2;  /* 浅玫粉边框 */
+  --color-read-title: #8b2635;  /* 酒红标题 */
+  --color-read-divider: #ebd5d2;
+  
+  /* 对话气泡 */
+  --color-bg-bubble-ai: #7a1f2e; /* AI 深酒红 */
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #fdf0ee; /* 极浅玫粉 */
+  --color-text-bubble-user: #7a1f2e;
+  
+  /* 点缀 */
+  --color-primary: #8b2635;     /* 酒红主调 */
+  --color-primary-hover: #721c2a;
+  --color-accent: #c4956a;      /* 暗金 */
+  --color-highlight-border: #8b2635;
+  --color-highlight-mark: rgba(139, 38, 53, 0.2);
+}
+
+/* 萧逸专属 · 极速之耀 */
+.theme-xiaoyi.read-theme-exclusive {
+  --color-bg-app: #e9f1f8;      /* 浅冰蓝背景 */
+  --color-text-app: #1a2530;    /* 外部文字深蓝灰 */
+  --color-read-bg: #f2f6fa;     /* 冰川冷白书页 */
+  --color-read-text: #1a2530;   /* 深蓝灰正文字 */
+  --color-read-border: #cadbef;  /* 冰蓝边框 */
+  --color-read-title: #1e40af;  /* 宝石蓝标题 */
+  --color-read-divider: #cadbef;
+  
+  /* 对话气泡 */
+  --color-bg-bubble-ai: #1d4ed8; /* AI 赛道深蓝 */
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #edf4f9; /* 极浅冰蓝 */
+  --color-text-bubble-user: #1e40af;
+  
+  /* 点缀 */
+  --color-primary: #1e40af;     /* 宝石蓝主调 */
+  --color-primary-hover: #173594;
+  --color-accent: #06b6d4;      /* 霓虹青 */
+  --color-highlight-border: #1e40af;
+  --color-highlight-mark: rgba(30, 64, 175, 0.2);
+}
+
+/* 齐司礼专属 · 昙华浮影 */
+.theme-qisili.read-theme-exclusive {
+  --color-bg-app: #edf3ee;      /* 浅玉绿色背景 */
+  --color-text-app: #26362d;    /* 外部文字墨绿 */
+  --color-read-bg: #f4f7f5;     /* 昙华玉白书页 */
+  --color-read-text: #2d3a33;   /* 护眼暗墨绿正文字 */
+  --color-read-border: #d2ded7;  /* 浅茶绿边框 */
+  --color-read-title: #2f5c47;  /* 墨绿标题 */
+  --color-read-divider: #d2ded7;
+  
+  /* 对话气泡 */
+  --color-bg-bubble-ai: #2f5c47; /* AI 墨绿 */
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #eaf2ec; /* 极浅草绿 */
+  --color-text-bubble-user: #2f5c47;
+  
+  /* 点缀 */
+  --color-primary: #2f5c47;     /* 墨绿 */
+  --color-primary-hover: #1e3d2f;
+  --color-accent: #a3b899;      /* 鼠尾草绿 */
+  --color-highlight-border: #2f5c47;
+  --color-highlight-mark: rgba(47, 92, 71, 0.2);
+}
+
+/* 查理苏专属 · 奢华极耀 */
+.theme-chaming.read-theme-exclusive, .theme-chalisu.read-theme-exclusive {
+  --color-bg-app: #f1ecf7;      /* 浅紫雾面背景 */
+  --color-text-app: #2a2533;    /* 外部文字深紫灰 */
+  --color-read-bg: #f8f6fc;     /* 浅紫罗兰白书页 */
+  --color-read-text: #2a2533;   /* 护眼深暗紫正文字 */
+  --color-read-border: #e2daf0;  /* 浅粉紫边框 */
+  --color-read-title: #5b21b6;  /* 紫罗兰标题 */
+  --color-read-divider: #e2daf0;
+  
+  /* 对话气泡 */
+  --color-bg-bubble-ai: #5b21b6; /* AI 皇家紫 */
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #f3e8ff; /* 极浅粉紫 */
+  --color-text-bubble-user: #5b21b6;
+  
+  /* 点缀 */
+  --color-primary: #5b21b6;     /* 皇家紫 */
+  --color-primary-hover: #4c1d95;
+  --color-accent: #d4af37;      /* 奢华金 */
+  --color-highlight-border: #5b21b6;
+  --color-highlight-mark: rgba(91, 33, 182, 0.2);
+}
+
+/* 夏鸣星专属 · 璨若骄阳 */
+.theme-xiamingxing.read-theme-exclusive {
+  --color-bg-app: #fff2e3;      /* 浅暖橘背景 */
+  --color-text-app: #33281e;    /* 外部文字暗茶色 */
+  --color-read-bg: #fcf8f4;     /* 旭日晨曦暖白书页 */
+  --color-read-text: #33281e;   /* 护眼暗茶正文字 */
+  --color-read-border: #ebdcd0;  /* 浅茶橘边框 */
+  --color-read-title: #ea580c;  /* 耀眼橘标题 */
+  --color-read-divider: #ebdcd0;
+  
+  /* 对话气泡 */
+  --color-bg-bubble-ai: #d97706; /* AI 橘黄 */
+  --color-text-bubble-ai: #ffffff;
+  --color-bg-bubble-user: #fef3c7; /* 极浅暖橘黄 */
+  --color-text-bubble-user: #7c2d12;
+  
+  /* 点缀 */
+  --color-primary: #ea580c;     /* 耀橘 */
+  --color-primary-hover: #ca8a04;
+  --color-accent: #fcd34d;      /* 骄阳金 */
+  --color-highlight-border: #ea580c;
+  --color-highlight-mark: rgba(234, 88, 12, 0.2);
+}
+
+
+/* ==========================================================================
+   4. 适配实用类 (Dynamic Theme Utility Classes)
+   ========================================================================== */
+
+.theme-bg-app {
+  background-color: var(--color-bg-app);
+}
+
+.theme-bg-chat {
+  background-color: var(--color-read-bg);
+}
+
+.theme-bg-card {
+  background-color: var(--color-read-bg);
+}
+
+.theme-text-card {
+  color: var(--color-read-text);
+}
+
+.theme-text-title {
+  color: var(--color-read-title);
+}
+
+.theme-text-app {
+  color: var(--color-text-app);
+}
+
+/* 顶部配置栏按钮通用对比色样式 (不依赖 Tailwind 动态 JIT) */
+.theme-header-btn {
+  background-color: rgba(128, 128, 128, 0.12);
+  color: var(--color-text-app);
+  border-color: var(--color-read-border);
+}
+.theme-header-btn:hover {
+  background-color: rgba(128, 128, 128, 0.22);
+}
+
+.theme-border {
+  border-color: var(--color-read-border);
+}
+
+.theme-text-primary {
+  color: var(--color-primary);
+}
+
+.theme-bg-primary {
+  background-color: var(--color-primary);
+}
+
+.theme-bg-primary-light {
+  background-color: var(--color-primary-light);
+}
+
+.theme-bg-primary-hover:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.theme-font-reading {
+  font-family: var(--font-reading);
+}
+
+/* 划线与批注高亮样式 */
+.ai-annotation-mark {
+  background-color: var(--color-highlight-mark);
+  border-bottom: 2px dashed var(--color-highlight-border);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.ai-annotation-mark:hover {
+  background-color: rgba(251, 191, 36, 0.4);
+}
+
+/* 打字机光标动画 */
+@keyframes typewriter-cursor {
+  from { border-right-color: var(--color-primary); }
+  to { border-right-color: transparent; }
+}
+
+.typewriter-loading::after {
+  content: '▋';
+  display: inline-block;
+  color: var(--color-primary);
+  animation: typewriter-cursor 0.8s step-end infinite;
+  margin-left: 2px;
+}
+
+/* ==========================================================================
+   5. 双栏及排版 (WeChat Reading Layout Classes)
+   ========================================================================== */
+
+.wechat-reader-container {
+  columns: 2;
+  column-gap: 4rem;
+  column-rule: 1px dashed var(--color-read-border);
+  column-fill: auto;
+  height: 100%;
+}
+
+@media (max-width: 1024px) {
+  .wechat-reader-container {
+    columns: 1;
+    column-rule: none;
+  }
+}
