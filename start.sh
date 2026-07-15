@@ -67,6 +67,17 @@ if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
     npm install
 fi
 
+# 兜底修补：检测是否缺少 rolldown Linux 原生绑定包（针对 root 权限或网络限制漏装的场景）
+if [ ! -d "$SCRIPT_DIR/frontend/node_modules/@rolldown/binding-linux-x64-gnu" ]; then
+    echo -e "${YELLOW}[!] 检测到缺失 Linux 原生绑定包 (@rolldown/binding-linux-x64-gnu)，正在启动自动修补安装...${NC}"
+    cd "$SCRIPT_DIR/frontend"
+    # 使用 --no-save 确保本地补齐依赖，但不写入 package.json，避免影响其他平台开发
+    npm install @rolldown/binding-linux-x64-gnu --no-save || {
+        echo -e "${YELLOW}[!] 正在使用国内镜像源进行二次修补...${NC}"
+        npm install @rolldown/binding-linux-x64-gnu --no-save --registry=https://registry.npmmirror.com
+    }
+fi
+
 # 5. 检查后端 Python 虚拟环境及依赖
 echo -e "\n${GREEN}[2/3] 检查后端 Python 环境及虚拟环境...${NC}"
 if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then

@@ -30,8 +30,8 @@ export function decodeText(arrayBuffer: ArrayBuffer): string {
 export function parseTxt(fileName: string, text: string): ParsedBook {
   const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
-  // 匹配常见章节标题正则
-  const chapterRegex = /^\s*(第\s*[一二三四五六七八九十百千零0-9]+\s*[章节卷集部篇回].*)$/gm
+  // 匹配常见章节标题正则 (添加“两”、“万”支持，并兼容“正文”“VIP章节”等前缀)
+  const chapterRegex = /^\s*(?:正文\s+|VIP章节\s+|最新章节\s+|分卷\s+)?(第\s*[一二三四五六七八九十百千万两零0-9]+\s*[章节卷集部篇回].*)$/gm
 
   const matches: { index: number; title: string }[] = []
   let match
@@ -41,6 +41,27 @@ export function parseTxt(fileName: string, text: string): ParsedBook {
       index: match.index,
       title: match[1].trim(),
     })
+  }
+
+  // 兜底逻辑：有些特别的网文可能用 "Chapter 1" 或纯数字 "01 " 作标题
+  if (matches.length === 0) {
+    const englishChapterRegex = /^\s*(Chapter\s*[0-9IVXLCDM]+.*)$/gmi
+    while ((match = englishChapterRegex.exec(cleanText)) !== null) {
+      matches.push({
+        index: match.index,
+        title: match[1].trim(),
+      })
+    }
+  }
+
+  if (matches.length === 0) {
+    const numericChapterRegex = /^\s*([0-9]{1,4}\s+[^\d\n].{0,40})$/gm
+    while ((match = numericChapterRegex.exec(cleanText)) !== null) {
+      matches.push({
+        index: match.index,
+        title: match[1].trim(),
+      })
+    }
   }
 
   const chapters: Chapter[] = []
