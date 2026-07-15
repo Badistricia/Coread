@@ -30,6 +30,8 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+novelTempDir/
+TODO.*
 
 # ==========================================================================
 # Caches, Linting & Testing Caches

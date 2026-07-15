@@ -373,6 +373,16 @@ html, body, #app {
   background-color: rgba(251, 191, 36, 0.4);
 }
 
+.user-highlight-mark {
+  background-color: var(--color-highlight-mark);
+  border-bottom: 2px solid var(--color-highlight-border);
+  cursor: pointer;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+}
+.user-highlight-mark:hover {
+  filter: brightness(0.92);
+}
+
 /* 打字机光标动画 */
 @keyframes typewriter-cursor {
   from { border-right-color: var(--color-primary); }

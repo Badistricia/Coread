@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import ChatBox from '@/components/ChatBox.vue'
 import SelectionToolbar from '@/components/SelectionToolbar.vue'
 import { useChatStore } from '@/stores/chatStore'
@@ -155,6 +155,24 @@ const activeAnnotations = computed(() => {
 // 对段落文字动态生成划线批注高亮 HTML
 function highlightParagraph(paraText: string) {
   let html = paraText
+
+  // 1. 先进行用户划线高亮（荧光笔实线）
+  chatStore.messages.forEach((msg, idx) => {
+    if (msg.role === 'user' && msg.quote) {
+      // 跨段落匹配处理：按行拆开匹配，确保每一段对应的行都能高亮
+      const lines = msg.quote.split('\n').map(l => l.trim()).filter(Boolean)
+      lines.forEach(line => {
+        if (line && html.includes(line)) {
+          const escapedText = line.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
+          const regex = new RegExp(escapedText, 'g')
+          // 添加 data-msg-index 属性关联提问消息
+          html = html.replace(regex, `<span class="user-highlight-mark" data-msg-index="${idx}">${line}</span>`)
+        }
+      })
+    }
+  })
+
+  // 2. 再进行 AI 批注高亮
   activeAnnotations.value.forEach(ann => {
     if (ann.originalText && html.includes(ann.originalText)) {
       const escapedText = ann.originalText.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
@@ -162,8 +180,144 @@ function highlightParagraph(paraText: string) {
       html = html.replace(regex, `<span class="ai-annotation-mark" title="${ann.comment}">${ann.originalText}</span>`)
     }
   })
+
   return html
 }
+
+// ── 荧光划线点击气泡追问浮窗状态 ──
+const showQuotePopover = ref(false)
+const popoverPosition = ref({ x: 0, y: 0 })
+const popoverMessageIndex = ref(-1)
+const followUpInput = ref('')
+const popoverMessageContainer = ref<HTMLDivElement | null>(null)
+
+// 过滤出该划线对应的问答线程消息
+const popoverThreadMessages = computed(() => {
+  if (popoverMessageIndex.value === -1 || !chatStore.currentSession) return []
+  const baseUserMsg = chatStore.currentSession.messages[popoverMessageIndex.value]
+  if (!baseUserMsg || baseUserMsg.role !== 'user') return []
+  
+  const targetQuote = baseUserMsg.quote
+  if (!targetQuote) return []
+  
+  const list: any[] = []
+  const msgs = chatStore.currentSession.messages
+  
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i]
+    if (m.role === 'user' && m.quote === targetQuote) {
+      list.push(m)
+      let j = i + 1
+      while (j < msgs.length && msgs[j].role === 'ai') {
+        list.push(msgs[j])
+        j++
+      }
+    }
+  }
+  return list
+})
+
+// 悬浮框的动态防越界定位
+const popoverStyle = computed(() => {
+  let left = popoverPosition.value.x
+  let top = popoverPosition.value.y
+  
+  const halfWidth = 190
+  const padding = 16
+  const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1000
+  const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800
+  
+  if (left - halfWidth < padding) {
+    left = halfWidth + padding
+  }
+  if (left + halfWidth > windowWidth - padding) {
+    left = windowWidth - halfWidth - padding
+  }
+  
+  // 防止底部偏出
+  const estimatedHeight = 320
+  if (top + estimatedHeight > windowHeight - padding) {
+    top = windowHeight - estimatedHeight - padding
+  }
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    transform: 'translateX(-50%)',
+  }
+})
+
+// 点击正文划线触发浮层
+function onReaderContentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const userMark = target.closest('.user-highlight-mark') as HTMLElement | null
+  
+  if (userMark) {
+    const msgIndexStr = userMark.getAttribute('data-msg-index')
+    if (msgIndexStr) {
+      const msgIndex = parseInt(msgIndexStr)
+      if (msgIndex !== -1) {
+        const rect = userMark.getBoundingClientRect()
+        popoverPosition.value = {
+          x: rect.left + rect.width / 2,
+          y: rect.bottom + 8
+        }
+        popoverMessageIndex.value = msgIndex
+        showQuotePopover.value = true
+        followUpInput.value = ''
+        
+        nextTick(() => {
+          const inputEl = document.querySelector('.popover-input-field') as HTMLTextAreaElement | null
+          inputEl?.focus()
+          if (popoverMessageContainer.value) {
+            popoverMessageContainer.value.scrollTop = popoverMessageContainer.value.scrollHeight
+          }
+        })
+      }
+    }
+  }
+}
+
+// 发送追问
+async function sendFollowUp() {
+  if (chatStore.isStreaming || !readerStore.book || popoverMessageIndex.value === -1) return
+  const text = followUpInput.value.trim()
+  if (!text) return
+
+  const baseUserMsg = chatStore.currentSession?.messages[popoverMessageIndex.value]
+  if (!baseUserMsg) return
+  const targetQuote = baseUserMsg.quote || ''
+
+  followUpInput.value = ''
+  
+  const contextText = readerStore.currentPageContent || ''
+  
+  await chatStore.streamResponse(
+    text,
+    targetQuote,
+    contextText,
+    readerStore.book.id,
+    companionStore.currentCompanionId,
+    readerStore.currentChapterIndex + 1
+  )
+}
+
+function cleanContent(content: string) {
+  return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
+}
+
+// 监听追问会话增长，自动滚动
+watch(
+  () => popoverThreadMessages.value,
+  () => {
+    nextTick(() => {
+      if (popoverMessageContainer.value) {
+        popoverMessageContainer.value.scrollTop = popoverMessageContainer.value.scrollHeight
+      }
+    })
+  },
+  { deep: true }
+)
 
 // ── 监听进度变化并自动保存 ──
 watch(
@@ -446,7 +600,7 @@ onMounted(async () => {
           class="flex-1 max-w-7xl mx-auto w-full theme-bg-card theme-text-card rounded-2xl shadow-lg border theme-border flex flex-col justify-between px-10 py-8 my-3 relative transition-all duration-300 min-h-0"
         >
           <!-- 局部绑定的 mouseup 正文划线监听，限制其最大高度，防止其撑开卡片 -->
-          <div ref="readerContentRef" class="flex-1 min-h-0 overflow-hidden flex flex-col justify-center my-4" @mouseup="onTextSelected">
+          <div ref="readerContentRef" class="flex-1 min-h-0 overflow-hidden flex flex-col justify-center my-4" @mouseup="onTextSelected" @click="onReaderContentClick">
             <div
               class="wechat-reader-container theme-font-reading tracking-wide text-justify theme-text-card h-full overflow-hidden transition-all duration-300"
               :style="{ fontSize: readerStore.fontSize + 'px' }"
@@ -505,6 +659,75 @@ onMounted(async () => {
       :y="selectionY"
       @submit="onToolbarSubmit"
     />
+
+    <!-- 荧光划线点击气泡追问浮窗 -->
+    <div v-if="showQuotePopover" class="fixed inset-0 z-40 bg-transparent" @click="showQuotePopover = false"></div>
+
+    <Transition name="fade-scale">
+      <div
+        v-if="showQuotePopover"
+        ref="popoverCardRef"
+        :style="popoverStyle"
+        class="quote-popover-card fixed z-50 w-[380px] max-w-[90vw] bg-[var(--color-read-bg)]/90 backdrop-blur-md border theme-border shadow-2xl rounded-2xl p-4 flex flex-col transition-all duration-300"
+      >
+        <!-- 头部：伴侣名字 + 划线原文极简剪切 -->
+        <div class="pb-2 border-b theme-border flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold theme-text-primary">与 {{ companionStore.currentCompanion.name }} 研讨中</span>
+          </div>
+          <button
+            @click="showQuotePopover = false"
+            class="text-stone-400 hover:text-stone-600 transition-colors px-1 text-xs cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <!-- 划线原文缩影 -->
+        <div class="py-1.5 px-2 bg-stone-500/5 rounded-lg border theme-border mt-2 text-[10px] text-[var(--color-read-text)] opacity-75 truncate italic shrink-0">
+          划线原文：“{{ chatStore.currentSession?.messages[popoverMessageIndex]?.quote }}”
+        </div>
+
+        <!-- 局部问答对话滚动列表 -->
+        <div
+          ref="popoverMessageContainer"
+          class="flex-1 overflow-y-auto my-3 space-y-3 pr-1 max-h-[220px] min-h-[100px]"
+        >
+          <div
+            v-for="(msg, i) in popoverThreadMessages"
+            :key="i"
+            :class="[
+              'max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed shadow-xs transition-all duration-200',
+              msg.role === 'user'
+                ? 'ml-auto bg-[var(--color-bg-bubble-user)] text-[var(--color-text-bubble-user)] rounded-br-none'
+                : 'mr-auto bg-[var(--color-bg-bubble-ai)] text-[var(--color-text-bubble-ai)] border theme-border rounded-bl-none',
+              msg.isStreaming ? 'typewriter-loading' : ''
+            ]"
+          >
+            <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
+          </div>
+        </div>
+
+        <!-- 底部追问输入框 -->
+        <div class="pt-2 border-t theme-border flex gap-2 shrink-0">
+          <textarea
+            v-model="followUpInput"
+            rows="1"
+            placeholder="输入想法或追问..."
+            class="popover-input-field flex-1 rounded-xl border theme-border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] bg-[var(--color-read-bg)] text-[var(--color-read-text)] transition-all resize-none"
+            @keydown.enter.prevent="sendFollowUp"
+            :disabled="chatStore.isStreaming"
+          />
+          <button
+            class="rounded-xl theme-bg-primary px-4 py-2 text-xs font-semibold text-white theme-bg-primary-hover shadow-xs hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
+            @click="sendFollowUp"
+            :disabled="!followUpInput.trim() || chatStore.isStreaming"
+          >
+            {{ chatStore.isStreaming ? '...' : '发送' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
