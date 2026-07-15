@@ -138,6 +138,7 @@ export const useChatStore = defineStore('chat', () => {
     userMsg: string,
     quoteText: string,
     contextText: string,
+    chapterText: string,
     _bookId: string,
     companionId: string,
     currentChapter: number
@@ -175,6 +176,7 @@ export const useChatStore = defineStore('chat', () => {
         body: JSON.stringify({
           message: userMsg,
           context_text: contextText,
+          chapter_text: chapterText,
           current_local_time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
           daily_read_minutes: readerStore.dailyReadMinutes,
           current_chapter: currentChapter,

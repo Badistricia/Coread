@@ -74,10 +74,12 @@ async function onToolbarSubmit(data: { text: string; question: string }) {
 
   // 3. 发送流式对话
   const contextText = readerStore.currentPageContent || ''
+  const chapterText = readerStore.currentChapter?.content || ''
   await chatStore.streamResponse(
     data.question,
     data.text,
     contextText,
+    chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
     readerStore.currentChapterIndex + 1
@@ -291,11 +293,13 @@ async function sendFollowUp() {
   followUpInput.value = ''
   
   const contextText = readerStore.currentPageContent || ''
+  const chapterText = readerStore.currentChapter?.content || ''
   
   await chatStore.streamResponse(
     text,
     targetQuote,
     contextText,
+    chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
     readerStore.currentChapterIndex + 1

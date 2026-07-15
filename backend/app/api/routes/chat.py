@@ -29,6 +29,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     context_text: str
+    chapter_text: str = ""
     current_local_time: str
     daily_read_minutes: int
     current_chapter: int
@@ -52,6 +53,7 @@ async def chat(req: ChatRequest):
     user = get_user_message(
         companion_id=req.companion_id,
         context_text=req.context_text,
+        chapter_text=req.chapter_text,
         message=req.message,
         quote=req.quote,
     )

@@ -69,11 +69,13 @@ function send() {
 
   // 获取当前阅读段落作为上下文
   const contextText = readerStore.currentPageContent || ''
+  const chapterText = readerStore.currentChapter?.content || ''
   
   chatStore.streamResponse(
     userText,
     quoteText,
     contextText,
+    chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
     readerStore.currentChapterIndex + 1
