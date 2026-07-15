@@ -113,4 +113,18 @@ pnpm-debug.log*
 /*.txt
 /*.png
 /*.html
-/明朝那些事儿*
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Local run logs & temp logs
+nohup.out
+frontend.log
+backend.log
+
+# Local HTML book resource folders
+*_files/
+
