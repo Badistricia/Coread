@@ -167,7 +167,7 @@ export const useChatStore = defineStore('chat', () => {
     const aiMessageIdx = currentSession.value.messages.push({ role: 'ai', content: '', isStreaming: true }) - 1
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch('http://localhost:8010/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

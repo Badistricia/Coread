@@ -29,14 +29,14 @@ if (-not (Test-Path $frontendModules)) {
 }
 
 # 4. 启动后端
-Write-Host "  启动后端 (FastAPI :8000)..." -ForegroundColor Green
-$backend = Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$scriptRoot\backend'; Write-Host 'Backend starting at http://localhost:8000' -ForegroundColor Green; uvicorn app.main:app --reload --port 8000" -PassThru
+Write-Host "  启动后端 (FastAPI :8010)..." -ForegroundColor Green
+$backend = Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$scriptRoot\backend'; Write-Host 'Backend starting at http://localhost:8010' -ForegroundColor Green; uvicorn app.main:app --reload --port 8010" -PassThru
 
 # 5. 启动前端
-Write-Host "  启动前端 (Vite :5173)..." -ForegroundColor Green
-$frontend = Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$scriptRoot\frontend'; Write-Host 'Frontend starting at http://localhost:5173' -ForegroundColor Green; npm run dev" -PassThru
+Write-Host "  启动前端 (Vite :5174)..." -ForegroundColor Green
+$frontend = Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$scriptRoot\frontend'; Write-Host 'Frontend starting at http://localhost:5174' -ForegroundColor Green; npm run dev" -PassThru
 
 Write-Host "`n  前后端均已启动！" -ForegroundColor Cyan
-Write-Host "   前端: http://localhost:5173" -ForegroundColor White
-Write-Host "   后端: http://localhost:8000" -ForegroundColor White
-Write-Host "   API文档: http://localhost:8000/docs`n" -ForegroundColor White
+Write-Host "   前端: http://localhost:5174" -ForegroundColor White
+Write-Host "   后端: http://localhost:8010" -ForegroundColor White
+Write-Host "   API文档: http://localhost:8010/docs`n" -ForegroundColor White
