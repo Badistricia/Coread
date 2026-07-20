@@ -390,11 +390,67 @@ html, body, #app {
 }
 
 .typewriter-loading::after {
-  content: '▋';
+  content: '';
   display: inline-block;
   color: var(--color-primary);
-  animation: typewriter-cursor 0.8s step-end infinite;
   margin-left: 2px;
+}
+
+/* 三点加载动画 */
+@keyframes bubble-dots {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+.chat-bubble-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  height: 16px;
+}
+
+.chat-bubble-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: bubble-dots 1.4s infinite ease-in-out;
+}
+.chat-bubble-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+.chat-bubble-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.chat-bubble-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+/* 精准定位高亮闪烁效果 */
+@keyframes highlight-flash-anim {
+  0%, 100% {
+    background-color: var(--color-highlight-mark);
+    transform: scale(1);
+  }
+  50% {
+    background-color: rgba(251, 191, 36, 0.8);
+    box-shadow: 0 0 12px var(--color-primary);
+    transform: scale(1.03);
+  }
+}
+
+.highlight-flash {
+  animation: highlight-flash-anim 1.2s ease-in-out 3;
+  transition: all 0.3s ease;
+  display: inline-block;
+  border-radius: 4px;
 }
 
 /* ==========================================================================
@@ -415,3 +471,69 @@ html, body, #app {
     column-rule: none;
   }
 }
+
+/* ==========================================================================
+   6. 统计弹窗 ElDialog 深度美化 (Statistics Modal Reskin)
+   ========================================================================== */
+.stats-dialog {
+  background-color: var(--color-read-bg) !important;
+  border: 1px solid var(--color-read-border) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 20px !important;
+}
+
+.stats-dialog .el-dialog__header {
+  padding: 16px 20px 12px 20px !important;
+  border-bottom: 1px solid var(--color-read-border);
+  margin-right: 0 !important;
+}
+
+.stats-dialog .el-dialog__title {
+  color: var(--color-read-title) !important;
+  font-weight: 700;
+  font-size: 16px;
+  font-family: inherit;
+}
+
+.stats-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: var(--color-read-text) !important;
+  opacity: 0.6;
+}
+.stats-dialog .el-dialog__headerbtn:hover .el-dialog__close {
+  opacity: 1;
+}
+
+.stats-dialog .el-tabs--border-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.stats-dialog .el-tabs__header {
+  background-color: rgba(128, 128, 128, 0.05) !important;
+  border-bottom: 1px solid var(--color-read-border) !important;
+  border-radius: 12px 12px 0 0;
+}
+
+.stats-dialog .el-tabs__item {
+  color: var(--color-read-text) !important;
+  opacity: 0.6;
+  font-size: 13px !important;
+  transition: all 0.3s ease;
+  border-top: 2px solid transparent !important;
+}
+
+.stats-dialog .el-tabs__item.is-active {
+  background-color: var(--color-read-bg) !important;
+  color: var(--color-primary) !important;
+  opacity: 1;
+  font-weight: 700;
+  border-right-color: var(--color-read-border) !important;
+  border-left-color: var(--color-read-border) !important;
+  border-top-color: var(--color-primary) !important;
+}
+
+.stats-dialog .el-tabs__content {
+  padding: 16px 0 0 0 !important;
+}
+

@@ -10,6 +10,9 @@ export interface ChatMessage {
   content: string
   quote?: string
   isStreaming?: boolean
+  chapterIndex?: number
+  pageIndex?: number
+  createdAt?: string
 }
 
 export interface ChatSession {
@@ -125,6 +128,16 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 修改当前会话的名字
+   */
+  function updateSessionName(_bookId: string, _companionId: string, sessionId: string, newName: string) {
+    const session = sessions.value.find((s) => s.id === sessionId)
+    if (session) {
+      session.name = newName
+    }
+  }
+
   function clear() {
     sessions.value = []
     currentSessionId.value = ''
@@ -162,10 +175,24 @@ export const useChatStore = defineStore('chat', () => {
       })
 
     // 2. 插入用户当前消息 (保留 quote 属性用于前端气泡引用显示)
-    currentSession.value.messages.push({ role: 'user', content: userMsg, quote: quoteText })
+    currentSession.value.messages.push({
+      role: 'user',
+      content: userMsg,
+      quote: quoteText,
+      chapterIndex: readerStore.currentChapterIndex,
+      pageIndex: readerStore.currentPageIndex,
+      createdAt: new Date().toISOString()
+    })
 
     // 3. 插入占位 AI 流式消息
-    const aiMessageIdx = currentSession.value.messages.push({ role: 'ai', content: '', isStreaming: true }) - 1
+    const aiMessageIdx = currentSession.value.messages.push({
+      role: 'ai',
+      content: '',
+      isStreaming: true,
+      chapterIndex: readerStore.currentChapterIndex,
+      pageIndex: readerStore.currentPageIndex,
+      createdAt: new Date().toISOString()
+    }) - 1
 
     try {
       const response = await fetch('http://localhost:8010/api/chat', {
@@ -263,6 +290,7 @@ export const useChatStore = defineStore('chat', () => {
     createNewSession,
     deleteSession,
     clearCurrentSession,
+    updateSessionName,
     clear,
     streamResponse,
   }

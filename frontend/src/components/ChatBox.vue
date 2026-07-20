@@ -100,6 +100,40 @@ function clearCurrentSession() {
 function cleanContent(content: string) {
   return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
 }
+
+// ── 会话名称重命名状态与逻辑 ──
+const isEditingSessionName = ref(false)
+const editSessionNameInput = ref('')
+const renameInputRef = ref<any>(null)
+
+function startRenameSession() {
+  const current = chatStore.currentSession
+  if (current) {
+    editSessionNameInput.value = current.name
+    isEditingSessionName.value = true
+    nextTick(() => {
+      renameInputRef.value?.focus()
+    })
+  }
+}
+
+function finishRenameSession() {
+  if (!isEditingSessionName.value) return
+  isEditingSessionName.value = false
+  const newName = editSessionNameInput.value.trim()
+  if (newName && readerStore.book && companionStore.currentCompanionId && chatStore.currentSessionId) {
+    chatStore.updateSessionName(
+      readerStore.book.id,
+      companionStore.currentCompanionId,
+      chatStore.currentSessionId,
+      newName
+    )
+  }
+}
+
+function cancelRenameSession() {
+  isEditingSessionName.value = false
+}
 </script>
 
 <template>
@@ -119,29 +153,80 @@ function cleanContent(content: string) {
       </div>
 
       <!-- 会话选择与管理 -->
-      <div class="flex items-center gap-1.5">
-        <select
-          v-model="chatStore.currentSessionId"
-          class="bg-[var(--color-read-bg)] text-[10px] border theme-border rounded-lg px-2 py-1 text-[var(--color-read-text)] focus:outline-none max-w-[90px] truncate"
-        >
-          <option v-for="s in chatStore.sessions" :key="s.id" :value="s.id">
-            {{ s.name }}
-          </option>
-        </select>
-        <button
+      <div class="flex items-center gap-1 shrink-0">
+        <div v-if="isEditingSessionName" class="flex items-center gap-1">
+          <el-input
+            v-model="editSessionNameInput"
+            size="small"
+            ref="renameInputRef"
+            class="!w-24"
+            @keyup.enter="finishRenameSession"
+            @keyup.esc="cancelRenameSession"
+          />
+          <el-button
+            type="success"
+            size="small"
+            circle
+            @click="finishRenameSession"
+            title="确认保存"
+            class="!p-0 !h-6 !w-6"
+          >
+            <el-icon><Check /></el-icon>
+          </el-button>
+          <el-button
+            type="info"
+            size="small"
+            circle
+            plain
+            @click="cancelRenameSession"
+            title="取消编辑"
+            class="!p-0 !h-6 !w-6 !ml-0"
+          >
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+        <div v-else class="flex items-center gap-1">
+          <el-select
+            v-model="chatStore.currentSessionId"
+            size="small"
+            class="!w-24"
+            placeholder="选择会话"
+          >
+            <el-option
+              v-for="s in chatStore.sessions"
+              :key="s.id"
+              :label="s.name"
+              :value="s.id"
+            />
+          </el-select>
+          <el-button
+            size="small"
+            circle
+            @click="startRenameSession"
+            title="重命名当前会话"
+            class="!p-0 !h-6 !w-6"
+          >
+            <el-icon><Edit /></el-icon>
+          </el-button>
+        </div>
+        <el-button
+          size="small"
           @click="createNewSession"
           title="新建会话"
-          class="text-[10px] text-[var(--color-read-text)] opacity-70 hover:opacity-100 px-2 py-1 border theme-border rounded-lg bg-[var(--color-read-bg)] hover:bg-stone-500/10 transition-colors cursor-pointer font-medium shrink-0"
+          class="!text-[10px] !px-2 !py-1 !h-6 !w-auto !ml-0"
         >
           新建
-        </button>
-        <button
+        </el-button>
+        <el-button
+          size="small"
+          type="danger"
+          plain
           @click="clearCurrentSession"
           title="清空当前会话"
-          class="text-[10px] text-[var(--color-read-text)] opacity-70 hover:opacity-100 px-2 py-1 border theme-border rounded-lg bg-[var(--color-read-bg)] hover:bg-stone-500/10 transition-colors cursor-pointer font-medium shrink-0"
+          class="!text-[10px] !px-2 !py-1 !h-6 !w-auto !ml-0"
         >
           清空
-        </button>
+        </el-button>
       </div>
     </div>
 
@@ -151,11 +236,11 @@ function cleanContent(content: string) {
         v-for="(msg, i) in chatStore.messages"
         :key="i"
         :class="[
-          'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all duration-300',
+          'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all duration-300 w-fit clear-both',
           msg.role === 'user'
             ? 'ml-auto bg-[var(--color-bg-bubble-user)] text-[var(--color-text-bubble-user)] rounded-br-none'
             : 'mr-auto bg-[var(--color-bg-bubble-ai)] text-[var(--color-text-bubble-ai)] border theme-border rounded-bl-none',
-          msg.isStreaming ? 'typewriter-loading' : ''
+          msg.isStreaming && msg.content ? 'typewriter-loading' : ''
         ]"
       >
         <!-- 引用原文卡片 -->
@@ -165,7 +250,15 @@ function cleanContent(content: string) {
         >
           “{{ msg.quote }}”
         </div>
-        <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
+        
+        <!-- 等待 AI 消息加载状态 -->
+        <div v-if="msg.role === 'ai' && !msg.content && msg.isStreaming" class="chat-bubble-dots">
+          <span class="chat-bubble-dot"></span>
+          <span class="chat-bubble-dot"></span>
+          <span class="chat-bubble-dot"></span>
+        </div>
+        
+        <p v-else class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
       </div>
       
       <!-- 引导状态 -->

@@ -4,6 +4,7 @@ import localforage from 'localforage'
 const bookStore = localforage.createInstance({ name: 'coread_books' })
 const chatStore = localforage.createInstance({ name: 'coread_chat' })
 const progressStore = localforage.createInstance({ name: 'coread_progress' })
+const bookmarkStore = localforage.createInstance({ name: 'coread_bookmarks' })
 
 // ── 书籍存取 ──
 export async function saveBook(bookId: string, content: string): Promise<void> {
@@ -48,4 +49,28 @@ export async function loadProgress(
   bookId: string,
 ): Promise<ReadingProgress | null> {
   return progressStore.getItem<ReadingProgress>(bookId)
+}
+
+// ── 书签存取 ──
+export interface Bookmark {
+  id: string
+  bookId: string
+  chapterIndex: number
+  pageIndex: number
+  chapterTitle: string
+  excerpt: string
+  createdAt: string
+}
+
+export async function saveBookmarks(
+  bookId: string,
+  bookmarks: Bookmark[],
+): Promise<void> {
+  await bookmarkStore.setItem(bookId, bookmarks)
+}
+
+export async function loadBookmarks(
+  bookId: string,
+): Promise<Bookmark[] | null> {
+  return bookmarkStore.getItem<Bookmark[]>(bookId)
 }

@@ -22,6 +22,15 @@ export const useReaderStore = defineStore('reader', () => {
   const themeStyle: Ref<string> = ref(
     localStorage.getItem('coread_theme_style') || 'read-theme-a'
   )
+  const isDoublePage: Ref<boolean> = ref(
+    localStorage.getItem('coread_is_double_page') !== 'false'
+  )
+  const lineHeight: Ref<number> = ref(
+    Number(localStorage.getItem('coread_line_height')) || 1.6
+  )
+
+  // ── 跳转历史与进度切回 ──
+  const latestReadProgress: Ref<{ chapterIndex: number; pageIndex: number } | null> = ref(null)
 
   // ── 视口与侧边栏宽度感知状态 ──
   const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
@@ -46,6 +55,25 @@ export const useReaderStore = defineStore('reader', () => {
   const currentChapterPages = computed<string[]>(() => {
     if (!currentChapter.value) return ['']
     
+    // 显式引用状态，确保单/双页切换和行距调整时，Pinia 触发重新计算分页
+    const doubleMode = isDoublePage.value
+    const lh = lineHeight.value
+    
+    const text = currentChapter.value.content
+    const paragraphs = text.split('\n').map(p => p.trim()).filter(Boolean)
+    const avgParagraphLength = paragraphs.length > 0 ? text.length / paragraphs.length : 1000
+    
+    // 动态安全系数 (0.4 到 0.58 之间)
+    // 章节内对话/短段落越多（即平均段落长度越短），越要收紧单页字数以防多段落垂直外边距撑爆容器高度导致吞字
+    let safetyFactor = 0.58
+    if (avgParagraphLength < 40) {
+      safetyFactor = 0.4
+    } else if (avgParagraphLength < 80) {
+      safetyFactor = 0.46
+    } else if (avgParagraphLength < 120) {
+      safetyFactor = 0.52
+    }
+    
     // 计算左右侧边栏占用
     const sidebarWidth = isChatOpen.value ? 384 : 0
     // 宽屏下小说卡片主体最大限制为 1280px 内容宽 (对应 max-w-7xl 卡片)
@@ -53,19 +81,20 @@ export const useReaderStore = defineStore('reader', () => {
     // 高度扣除顶部 Header(64px)、上下外边距(48px)、卡片上下内边距(80px)与底部翻页控制条(48px)
     const cardContentHeight = Math.max(200, viewportHeight.value - 240)
     
-    // 获取实际两列并排文字的总可铺展宽度 (扣除双栏 gap 64px)
-    const activeWidth = Math.max(200, cardContentWidth - 64)
+    // 获取实际铺展宽度。双栏下扣除 gap 64px；单栏下不扣除
+    const activeWidth = doubleMode 
+      ? Math.max(200, cardContentWidth - 64)
+      : Math.max(200, cardContentWidth)
     
-    // 铺展公式：总像素面积 / 单字像素面积。 1.62 为行高 leading-relaxed。
-    // 0.6 为流式填充安全指数（留白及首段缩进）
+    // 铺展公式：总像素面积 / 单字像素面积。
     const calculatedPageSize = Math.floor(
-      (0.6 * (activeWidth * cardContentHeight)) / (fontSize.value * fontSize.value * 1.6)
+      (safetyFactor * (activeWidth * cardContentHeight)) / (fontSize.value * fontSize.value * lh)
     )
     
     // 限制单页字符在 300 到 1500 字符之间
     const pageSize = Math.max(300, Math.min(calculatedPageSize, 1500))
     
-    return paginateText(currentChapter.value.content, pageSize)
+    return paginateText(text, pageSize)
   })
 
   const totalPages = computed<number>(() => {
@@ -158,6 +187,33 @@ export const useReaderStore = defineStore('reader', () => {
     readingStartTime.value = Date.now()
   }
 
+  function setDoublePage(val: boolean) {
+    isDoublePage.value = val
+    localStorage.setItem('coread_is_double_page', String(val))
+  }
+
+  function setLineHeight(val: number) {
+    lineHeight.value = val
+    localStorage.setItem('coread_line_height', String(val))
+  }
+
+  const pendingScrollQuote = ref('')
+
+  function recordCurrentProgress() {
+    latestReadProgress.value = {
+      chapterIndex: currentChapterIndex.value,
+      pageIndex: currentPageIndex.value,
+    }
+  }
+
+  function restoreLatestProgress() {
+    if (latestReadProgress.value) {
+      currentChapterIndex.value = latestReadProgress.value.chapterIndex
+      currentPageIndex.value = latestReadProgress.value.pageIndex
+      latestReadProgress.value = null
+    }
+  }
+
   return {
     book,
     chapters,
@@ -168,6 +224,10 @@ export const useReaderStore = defineStore('reader', () => {
     currentPageContent,
     fontSize,
     themeStyle,
+    isDoublePage,
+    lineHeight,
+    latestReadProgress,
+    pendingScrollQuote,
     viewportWidth,
     viewportHeight,
     isChatOpen,
@@ -180,5 +240,9 @@ export const useReaderStore = defineStore('reader', () => {
     changeFontSize,
     setThemeStyle,
     resetReadingTimer,
+    setDoublePage,
+    setLineHeight,
+    recordCurrentProgress,
+    restoreLatestProgress,
   }
 })

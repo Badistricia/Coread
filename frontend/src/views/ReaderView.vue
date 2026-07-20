@@ -11,6 +11,9 @@ import {
   loadBook,
   saveProgress,
   loadProgress,
+  saveBookmarks,
+  loadBookmarks,
+  type Bookmark,
 } from '@/utils/storage'
 
 const chatStore = useChatStore()
@@ -22,6 +25,217 @@ const readerContentRef = ref<HTMLElement | null>(null)
 const isUploading = ref(false)
 const showDirectory = ref(false)
 const showChatDrawer = ref(true) // 聊天抽屉开关状态
+const showStatsDialog = ref(false) // 统计弹窗显示开关
+
+const bookmarks = ref<Bookmark[]>([])
+
+// 载入书签
+async function initBookmarks() {
+  if (readerStore.book) {
+    const list = await loadBookmarks(readerStore.book.id)
+    bookmarks.value = list || []
+  }
+}
+
+// 检查当前页是否已被加为书签
+const isCurrentPageBookmarked = computed(() => {
+  return bookmarks.value.some(
+    (b) =>
+      b.chapterIndex === readerStore.currentChapterIndex &&
+      b.pageIndex === readerStore.currentPageIndex
+  )
+})
+
+// 切换书签状态
+async function toggleBookmark() {
+  if (!readerStore.book) return
+  const chapterIndex = readerStore.currentChapterIndex
+  const pageIndex = readerStore.currentPageIndex
+
+  if (isCurrentPageBookmarked.value) {
+    bookmarks.value = bookmarks.value.filter(
+      (b) => !(b.chapterIndex === chapterIndex && b.pageIndex === pageIndex)
+    )
+  } else {
+    const firstPara = currentPageParagraphs.value[0] || ''
+    const excerpt = firstPara.slice(0, 30) + (firstPara.length > 30 ? '...' : '')
+    const newBookmark: Bookmark = {
+      id: `bookmark_${Date.now()}`,
+      bookId: readerStore.book.id,
+      chapterIndex,
+      pageIndex,
+      chapterTitle: readerStore.currentChapter?.title || `第 ${chapterIndex + 1} 章`,
+      excerpt,
+      createdAt: new Date().toISOString(),
+    }
+    bookmarks.value.push(newBookmark)
+  }
+  await saveBookmarks(readerStore.book.id, bookmarks.value)
+}
+
+// 轮转行高选择 1.4 -> 1.6 -> 1.8 -> 2.0 -> 2.2 -> 1.4
+function cycleLineHeight() {
+  const current = readerStore.lineHeight
+  let next = 1.6
+  if (current === 1.4) next = 1.6
+  else if (current === 1.6) next = 1.8
+  else if (current === 1.8) next = 2.0
+  else if (current === 2.0) next = 2.2
+  else next = 1.4
+  readerStore.setLineHeight(next)
+}
+
+// 检查是否偏离最新进度
+const showProgressRestorer = computed(() => {
+  const progress = readerStore.latestReadProgress
+  if (!progress) return false
+  return (
+    progress.chapterIndex !== readerStore.currentChapterIndex ||
+    progress.pageIndex !== readerStore.currentPageIndex
+  )
+})
+
+const latestChapterText = computed(() => {
+  const progress = readerStore.latestReadProgress
+  if (!progress) return ''
+  return `第 ${progress.chapterIndex + 1} 章 · 第 ${progress.pageIndex + 1} 页`
+})
+
+// ── 统计详情看板数据聚合 ──
+
+// 聚合当前书籍当前角色的所有会话中的高亮和笔记
+const allHighlightsAndNotes = computed(() => {
+  const list: {
+    sessionId: string
+    sessionName: string
+    quote: string
+    content: string
+    chapterIndex: number
+    pageIndex: number
+    createdAt: string
+  }[] = []
+
+  chatStore.sessions.forEach(session => {
+    session.messages.forEach(msg => {
+      if (msg.role === 'user' && msg.quote) {
+        list.push({
+          sessionId: session.id,
+          sessionName: session.name,
+          quote: msg.quote,
+          content: msg.content,
+          chapterIndex: msg.chapterIndex ?? 0,
+          pageIndex: msg.pageIndex ?? 0,
+          createdAt: msg.createdAt ?? new Date().toISOString()
+        })
+      }
+    })
+  })
+  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+})
+
+// 聚合所有划线提问与 AI 回复片段
+const allAiDialogFragments = computed(() => {
+  const list: {
+    sessionId: string
+    sessionName: string
+    quote: string
+    userMessage: string
+    aiMessage: string
+    chapterIndex: number
+    pageIndex: number
+    createdAt: string
+  }[] = []
+
+  chatStore.sessions.forEach(session => {
+    const msgs = session.messages
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i]
+      if (m.role === 'user' && m.quote) {
+        let j = i + 1
+        while (j < msgs.length && msgs[j].role !== 'ai') {
+          j++
+        }
+        if (j < msgs.length) {
+          const aiMsg = msgs[j]
+          list.push({
+            sessionId: session.id,
+            sessionName: session.name,
+            quote: m.quote,
+            userMessage: m.content,
+            aiMessage: cleanContent(aiMsg.content),
+            chapterIndex: m.chapterIndex ?? 0,
+            pageIndex: m.pageIndex ?? 0,
+            createdAt: m.createdAt ?? new Date().toISOString()
+          })
+        }
+      }
+    }
+  })
+  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+})
+
+// 跳转至历史进度并切换会话上下文
+function navigateToProgress(chapterIdx: number, pageIdx: number, sessionId?: string, quote?: string) {
+  readerStore.recordCurrentProgress()
+  if (quote) {
+    readerStore.pendingScrollQuote = quote
+  }
+  readerStore.currentChapterIndex = chapterIdx
+  readerStore.currentPageIndex = pageIdx
+  
+  if (sessionId) {
+    chatStore.currentSessionId = sessionId
+    showChatDrawer.value = true
+  }
+  showStatsDialog.value = false
+}
+
+// 自动滚动定位到对应的划线文本
+function scrollToPendingQuote() {
+  const quote = readerStore.pendingScrollQuote
+  if (!quote) return
+
+  nextTick(() => {
+    const marks = document.querySelectorAll('.user-highlight-mark, .ai-annotation-mark')
+    let targetElement: HTMLElement | null = null
+
+    for (let i = 0; i < marks.length; i++) {
+      const el = marks[i] as HTMLElement
+      if (el.innerText.includes(quote) || quote.includes(el.innerText)) {
+        targetElement = el
+        break
+      }
+    }
+
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      targetElement.classList.add('highlight-flash')
+      setTimeout(() => {
+        targetElement?.classList.remove('highlight-flash')
+      }, 3600)
+    }
+    
+    readerStore.pendingScrollQuote = ''
+  })
+}
+
+
+// 删除书签
+async function removeBookmark(id: string) {
+  bookmarks.value = bookmarks.value.filter(b => b.id !== id)
+  if (readerStore.book) {
+    await saveBookmarks(readerStore.book.id, bookmarks.value)
+  }
+}
+
+// 监控书籍切换
+watch(
+  () => readerStore.book,
+  () => {
+    initBookmarks()
+  },
+  { immediate: true }
+)
 
 // 根据当前所选角色，动态呈现其专属渐变色图标
 const exclusiveThemeStyle = computed(() => {
@@ -333,6 +547,7 @@ watch(
         page: newPage,
         updatedAt: new Date().toISOString(),
       })
+      scrollToPendingQuote()
     }
   }
 )
@@ -493,89 +708,121 @@ onMounted(async () => {
           @click="showDirectory = false"
         ></div>
 
-        <!-- 右侧垂直悬浮面板 -->
-        <div v-if="readerStore.book" class="absolute right-6 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3.5 theme-bg-card border theme-border shadow-lg rounded-2xl p-2.5 transition-colors duration-300">
-          <!-- 目录圆钮 -->
-          <button
-            @click="showDirectory = !showDirectory"
-            title="查看目录"
-            class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          
-          <!-- 聊天抽屉折叠圆钮 -->
-          <button
-            @click="showChatDrawer = !showChatDrawer"
-            :title="showChatDrawer ? '收起聊天栏' : '展开聊天栏'"
-            class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showChatDrawer }"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </button>
-          
-          <hr class="theme-border opacity-50" />
-          
-          <!-- 字号调节圆钮 -->
-          <button
-            @click="readerStore.changeFontSize(1)"
-            title="放大字号"
-            class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-          >
-            A+
-          </button>
-          <button
-            @click="readerStore.changeFontSize(-1)"
-            title="缩小字号"
-            class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-[10px] font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-          >
-            A-
-          </button>
-          
+        <!-- 右侧垂直悬浮面板 (三段式) -->
+        <div v-if="readerStore.book" class="absolute right-6 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3 theme-bg-card border theme-border shadow-lg rounded-2xl p-2.5 transition-colors duration-300">
+          <!-- 【第一段：导航控制】 -->
+          <div class="flex flex-col gap-2">
+            <!-- 目录圆钮 -->
+            <button
+              @click="showDirectory = !showDirectory"
+              title="查看目录"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            
+            <!-- 聊天抽屉折叠圆钮 -->
+            <button
+              @click="showChatDrawer = !showChatDrawer"
+              :title="showChatDrawer ? '收起聊天栏' : '展开聊天栏'"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+              :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showChatDrawer }"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
+          </div>
+
           <hr class="theme-border opacity-50" />
 
-          <!-- 阅读背景主题 — 5 色圆点 -->
-          <div class="flex flex-col gap-2 items-center">
-            <!-- A · 暖金书卷 -->
+          <!-- 【第二段：功能工具】 -->
+          <div class="flex flex-col gap-2">
+            <!-- 统计弹窗按钮 -->
             <button
-              @click="readerStore.setThemeStyle('read-theme-a')"
-              class="w-5.5 h-5.5 rounded-full border border-[#ebdcb9] bg-[#fdfaf4] cursor-pointer hover:scale-110 transition-transform"
-              :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-a' }"
-              title="暖金书卷"
-            ></button>
-            <!-- B · 冷灰极简 -->
+              @click="showStatsDialog = true"
+              title="查看统计与书签笔记"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+              :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showStatsDialog }"
+            >
+              <el-icon class="text-stone-600 !text-base"><Notebook /></el-icon>
+            </button>
+          </div>
+
+          <hr class="theme-border opacity-50" />
+
+          <!-- 【第三段：阅读排版】 -->
+          <div class="flex flex-col gap-2.5 items-center">
+            <!-- 单双页切换 -->
             <button
-              @click="readerStore.setThemeStyle('read-theme-b')"
-              class="w-5.5 h-5.5 rounded-full border border-[#e4e4e7] bg-[#ffffff] cursor-pointer hover:scale-110 transition-transform"
-              :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-b' }"
-              title="冷灰极简"
-            ></button>
-            <!-- C · 奶茶温柔 -->
+              @click="readerStore.setDoublePage(!readerStore.isDoublePage)"
+              :title="readerStore.isDoublePage ? '切换为单页' : '切换为双页'"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              <span class="text-[10px] font-bold leading-none">{{ readerStore.isDoublePage ? '双页' : '单页' }}</span>
+            </button>
+
+            <!-- 行高调节 -->
             <button
-              @click="readerStore.setThemeStyle('read-theme-c')"
-              class="w-5.5 h-5.5 rounded-full border border-[#eedecf] bg-[#fbf8f3] cursor-pointer hover:scale-110 transition-transform"
-              :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-c' }"
-              title="奶茶温柔"
-            ></button>
-            <!-- D · 夜间暗黑 -->
+              @click="cycleLineHeight"
+              :title="`行距: ${readerStore.lineHeight.toFixed(1)} (点击切换)`"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              <span class="text-[10px] font-bold leading-none">L:{{ readerStore.lineHeight.toFixed(1) }}</span>
+            </button>
+
+            <!-- 字号调节 -->
             <button
-              @click="readerStore.setThemeStyle('read-theme-dark')"
-              class="w-5.5 h-5.5 rounded-full border border-zinc-700 bg-[#1c1c1e] cursor-pointer hover:scale-110 transition-transform"
-              :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-dark' }"
-              title="夜间暗黑"
-            ></button>
-            <!-- 专属角色配色 (动态读取渐变与名字) -->
+              @click="readerStore.changeFontSize(1)"
+              title="放大字号"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              A+
+            </button>
             <button
-              @click="readerStore.setThemeStyle('read-theme-exclusive')"
-              class="w-5.5 h-5.5 rounded-full border border-stone-300 cursor-pointer hover:scale-110 transition-transform shadow-xs"
-              :style="exclusiveThemeStyle"
-              :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-exclusive' }"
-              :title="companionStore.currentCompanionId === 'luchen' ? '陆沉专属 · 幻惑之瞳' : '萧逸专属 · 极速之耀'"
-            ></button>
+              @click="readerStore.changeFontSize(-1)"
+              title="缩小字号"
+              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-[10px] font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              A-
+            </button>
+
+            <!-- 主题色 5 色点 -->
+            <div class="flex flex-col gap-2 mt-1.5 items-center">
+              <button
+                @click="readerStore.setThemeStyle('read-theme-a')"
+                class="w-5.5 h-5.5 rounded-full border border-[#ebdcb9] bg-[#fdfaf4] cursor-pointer hover:scale-110 transition-transform"
+                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-a' }"
+                title="暖金书卷"
+              ></button>
+              <button
+                @click="readerStore.setThemeStyle('read-theme-b')"
+                class="w-5.5 h-5.5 rounded-full border border-[#e4e4e7] bg-[#ffffff] cursor-pointer hover:scale-110 transition-transform"
+                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-b' }"
+                title="冷灰极简"
+              ></button>
+              <button
+                @click="readerStore.setThemeStyle('read-theme-c')"
+                class="w-5.5 h-5.5 rounded-full border border-[#eedecf] bg-[#fbf8f3] cursor-pointer hover:scale-110 transition-transform"
+                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-c' }"
+                title="奶茶温柔"
+              ></button>
+              <button
+                @click="readerStore.setThemeStyle('read-theme-dark')"
+                class="w-5.5 h-5.5 rounded-full border border-zinc-700 bg-[#1c1c1e] cursor-pointer hover:scale-110 transition-transform"
+                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-dark' }"
+                title="夜间暗黑"
+              ></button>
+              <button
+                @click="readerStore.setThemeStyle('read-theme-exclusive')"
+                class="w-5.5 h-5.5 rounded-full border border-stone-300 cursor-pointer hover:scale-110 transition-transform shadow-xs"
+                :style="exclusiveThemeStyle"
+                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-exclusive' }"
+                :title="companionStore.currentCompanionId === 'luchen' ? '陆沉专属 · 幻惑之瞳' : '萧逸专属 · 极速之耀'"
+              ></button>
+            </div>
           </div>
         </div>
 
@@ -603,11 +850,57 @@ onMounted(async () => {
           v-else
           class="flex-1 max-w-7xl mx-auto w-full theme-bg-card theme-text-card rounded-2xl shadow-lg border theme-border flex flex-col justify-between px-10 py-8 my-3 relative transition-all duration-300 min-h-0"
         >
+          <!-- 下落式书签触发区 -->
+          <div
+            class="absolute top-0 right-12 w-10 h-16 cursor-pointer group z-20"
+            @click="toggleBookmark"
+            :title="isCurrentPageBookmarked ? '取消书签' : '加入书签'"
+          >
+            <div
+              class="w-6 h-14 mx-auto transition-all duration-300 flex items-center justify-center transform"
+              :class="[
+                isCurrentPageBookmarked
+                  ? 'translate-y-0 text-[var(--color-primary)]'
+                  : '-translate-y-8 opacity-20 group-hover:translate-y-0 group-hover:opacity-100 text-stone-400'
+              ]"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-14" viewBox="0 0 24 36" fill="currentColor">
+                <path d="M5 2h14a2 2 0 0 1 2 2v30l-9-6-9 6V4a2 2 0 0 1 2-2z" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- 毛玻璃进度一键切回提示条 -->
+          <Transition name="fade-scale">
+            <div
+              v-if="showProgressRestorer"
+              class="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-md border border-stone-200/50 dark:border-zinc-700/50 shadow-lg flex items-center gap-3 text-xs theme-text-card font-medium transition-all"
+            >
+              <span>您刚才阅读到：{{ latestChapterText }}</span>
+              <button
+                @click="readerStore.restoreLatestProgress"
+                class="px-2.5 py-1 rounded-full theme-bg-primary text-white hover:scale-105 active:scale-95 transition-all cursor-pointer font-bold border-0"
+              >
+                回到最新进度 ↺
+              </button>
+              <button
+                @click="readerStore.latestReadProgress = null"
+                class="text-stone-400 hover:text-stone-600 transition-colors text-[10px] bg-transparent border-0 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </Transition>
+
           <!-- 局部绑定的 mouseup 正文划线监听，限制其最大高度，防止其撑开卡片 -->
           <div ref="readerContentRef" class="flex-1 min-h-0 overflow-hidden flex flex-col justify-center my-4" @mouseup="onTextSelected" @click="onReaderContentClick">
             <div
               class="wechat-reader-container theme-font-reading tracking-wide text-justify theme-text-card h-full overflow-hidden transition-all duration-300"
-              :style="{ fontSize: readerStore.fontSize + 'px' }"
+              :style="{
+                fontSize: readerStore.fontSize + 'px',
+                columns: readerStore.isDoublePage ? 2 : 1,
+                columnRule: readerStore.isDoublePage ? '' : 'none'
+              }"
             >
               <!-- 章节标题 -->
               <h2
@@ -621,7 +914,11 @@ onMounted(async () => {
               <p
                 v-for="(para, idx) in currentPageParagraphs"
                 :key="idx"
-                class="indent-8 text-justify leading-relaxed tracking-wide mb-6"
+                class="indent-8 text-justify tracking-wide"
+                :style="{ 
+                  lineHeight: readerStore.lineHeight,
+                  marginBottom: '0.8em'
+                }"
                 v-html="highlightParagraph(para)"
               ></p>
             </div>
@@ -732,6 +1029,136 @@ onMounted(async () => {
         </div>
       </div>
     </Transition>
+    <!-- 统计详情弹窗 (书签/高亮笔记/AI 对话) -->
+    <el-dialog
+      v-model="showStatsDialog"
+      title="共读记录与统计看板"
+      width="800px"
+      destroy-on-close
+      class="stats-dialog !rounded-2xl"
+    >
+      <el-tabs type="border-card" class="rounded-xl overflow-hidden border theme-border">
+        <!-- 1. 书签看板 -->
+        <el-tab-pane label="我的书签">
+          <div v-if="bookmarks.length === 0" class="text-stone-400 text-xs py-8 text-center">
+            暂无书签。在书页右上角可添加书签。
+          </div>
+          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
+            <div
+              v-for="b in bookmarks"
+              :key="b.id"
+              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all flex items-center justify-between gap-4"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 text-xs font-bold text-[var(--color-primary)]">
+                  <span>{{ b.chapterTitle }}</span>
+                  <span class="opacity-60 font-normal text-[10px]">第 {{ b.pageIndex + 1 }} 页</span>
+                </div>
+                <p class="text-xs text-[var(--color-read-text)] italic mt-1.5 truncate">
+                  “{{ b.excerpt }}”
+                </p>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="navigateToProgress(b.chapterIndex, b.pageIndex, undefined, b.excerpt)"
+                >
+                  跳转
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  plain
+                  icon="Delete"
+                  circle
+                  @click="removeBookmark(b.id)"
+                />
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 2. 高亮与笔记看板 -->
+        <el-tab-pane label="高亮与随笔">
+          <div v-if="allHighlightsAndNotes.length === 0" class="text-stone-400 text-xs py-8 text-center">
+            暂无高亮或随感。在阅读中划线即可提问或高亮。
+          </div>
+          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
+            <div
+              v-for="(hn, idx) in allHighlightsAndNotes"
+              :key="idx"
+              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all"
+            >
+              <div class="flex items-center justify-between text-[10px] text-stone-400">
+                <span class="font-semibold text-[var(--color-primary)]">会话: {{ hn.sessionName }}</span>
+                <span>{{ new Date(hn.createdAt).toLocaleString() }}</span>
+              </div>
+              <div class="mt-2 pl-2.5 border-l-2 border-[var(--color-primary)] text-xs text-[var(--color-read-text)] italic bg-black/5 p-1.5 rounded">
+                “{{ hn.quote }}”
+              </div>
+              <div v-if="hn.content" class="mt-2 text-xs text-[var(--color-read-text)] leading-relaxed">
+                <strong class="text-[10px] opacity-60 block">我的随感：</strong>
+                {{ hn.content }}
+              </div>
+              <div class="mt-2.5 flex justify-end">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="navigateToProgress(hn.chapterIndex, hn.pageIndex, hn.sessionId, hn.quote)"
+                >
+                  定位到书页
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 3. AI 对话片段看板 -->
+        <el-tab-pane label="AI 研讨片段">
+          <div v-if="allAiDialogFragments.length === 0" class="text-stone-400 text-xs py-8 text-center">
+            暂无共读研讨对话。在书页中划线提问伴侣即可生成。
+          </div>
+          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
+            <div
+              v-for="(f, idx) in allAiDialogFragments"
+              :key="idx"
+              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all"
+            >
+              <div class="flex items-center justify-between text-[10px] text-stone-400">
+                <span class="font-semibold text-[var(--color-primary)]">会话: {{ f.sessionName }}</span>
+                <span>{{ new Date(f.createdAt).toLocaleString() }}</span>
+              </div>
+              <div class="mt-2 pl-2 border-l-2 border-[var(--color-primary)] text-[10px] text-stone-500 italic truncate">
+                研讨原文：“{{ f.quote }}”
+              </div>
+              <div class="mt-2.5 space-y-2">
+                <div class="text-xs text-[var(--color-read-text)] bg-[var(--color-bg-bubble-user)]/40 p-2 rounded-lg">
+                  <span class="font-bold text-[var(--color-text-bubble-user)] text-[10px] block mb-0.5">我：</span>
+                  {{ f.userMessage }}
+                </div>
+                <div class="text-xs text-[var(--color-read-text)] bg-[var(--color-bg-bubble-ai)]/40 border theme-border p-2 rounded-lg">
+                  <span class="font-bold text-[var(--color-text-bubble-ai)] text-[10px] block mb-0.5">{{ companionStore.currentCompanion.name }}：</span>
+                  {{ f.aiMessage }}
+                </div>
+              </div>
+              <div class="mt-2.5 flex justify-end">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="navigateToProgress(f.chapterIndex, f.pageIndex, f.sessionId, f.quote)"
+                >
+                  回到当时语境
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
