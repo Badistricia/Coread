@@ -35,9 +35,17 @@
      - 同时支持齐司礼（墨玉绿）、查理苏（皇家紫）、夏鸣星（骄阳橘）三位男主的专属皮肤。
    - 外部文字（Header 标题、未选中伴侣按钮等）采用高对比度自适应色，彻底修复了深色专属主题下字迹看不清的问题。
 
-6. **全自动 Proxy 净化会话持久化 (Auto-Saving)**
+6. **全自动 Proxy 净化与 IndexedDB 持久化 (Structured Clone & Auto-Saving)**
    - 接入 Pinia Store 深度响应式 Watch 自动存盘器。
-   - 在写入 IndexedDB 时，自动进行 `JSON` 净化剥离 Proxy 代理外壳，实现 100% 写入成功率，无论是强刷页面还是中断输入，历史聊天和阅读进度全部完美复原。
+   - 在持久化写入 IndexedDB 时，采用 JSON 序列化/还原机制深度剥离 Vue 3 Reactive Proxy 外壳，彻底根治了浏览器 structuredClone 算法对响应式代理对象无法克隆的报错问题，保障 100% 存盘成功率。
+   - 无论是强刷页面还是中断输入，历史聊天和阅读进度均完美复原。
+
+7. **莫兰迪轻奢自定义人设库 (Morandi Aesthetic Customizer)**
+   - 摒弃了生硬死板的 Element Plus 工业化界面，采用原生 HTML/CSS + Vue Transition 纯手工打造，完美融入乙游式伴读美学。
+   - **毛玻璃磨砂悬浮 Dialog**：配备 `backdrop-blur-md` 滤镜，支持微幅弹性缩放（scale）淡入动画，充满卡纸立体感。
+   - **动态流光输入控件**：输入框采用 Vue 3 的 `v-bind` 将当前所选人设的主题色动态绑定到 CSS focus 属性，聚焦时边框展现优雅的渐变呼吸霓虹光晕。
+   - **圆形微调色轮与莫兰迪预设**：支持一键选用经典莫兰迪双色预设，或使用极简色轮微调，界面精致流畅。
+   - **Vue 自带手写下拉菜单**：完全脱离 Element UI 下拉组件，带 `fade-slide` 动画及全局点击自动关闭收回机制。
 
 ---
 
