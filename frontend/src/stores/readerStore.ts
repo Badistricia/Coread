@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, markRaw } from 'vue'
+import { ref, computed, markRaw, watch } from 'vue'
 import type { Ref } from 'vue'
 import { type Chapter, paginateText } from '@/utils/reader'
 
@@ -51,20 +51,14 @@ export const useReaderStore = defineStore('reader', () => {
     return chapters.value[currentChapterIndex.value]
   })
 
-  // ── 动态响应式分页列表 (数学算力防溢出排版) ──
-  const currentChapterPages = computed<string[]>(() => {
-    if (!currentChapter.value) return ['']
-    
-    // 显式引用状态，确保单/双页切换和行距调整时，Pinia 触发重新计算分页
-    const doubleMode = isDoublePage.value
-    const lh = lineHeight.value
-    
-    const text = currentChapter.value.content
-    const paragraphs = text.split('\n').map(p => p.trim()).filter(Boolean)
-    const avgParagraphLength = paragraphs.length > 0 ? text.length / paragraphs.length : 1000
+  // ── 内部计算当前配置下的单页字符数上限 ──
+  function getPageSizeLimit(chapterContent: string, lhValue: number, doubleMode: boolean) {
+    if (!chapterContent) return 1000
+
+    const paragraphs = chapterContent.split('\n').map(p => p.trim()).filter(Boolean)
+    const avgParagraphLength = paragraphs.length > 0 ? chapterContent.length / paragraphs.length : 1000
     
     // 动态安全系数 (0.4 到 0.58 之间)
-    // 章节内对话/短段落越多（即平均段落长度越短），越要收紧单页字数以防多段落垂直外边距撑爆容器高度导致吞字
     let safetyFactor = 0.58
     if (avgParagraphLength < 40) {
       safetyFactor = 0.4
@@ -74,26 +68,31 @@ export const useReaderStore = defineStore('reader', () => {
       safetyFactor = 0.52
     }
     
-    // 计算左右侧边栏占用
     const sidebarWidth = isChatOpen.value ? 384 : 0
-    // 宽屏下小说卡片主体最大限制为 1280px 内容宽 (对应 max-w-7xl 卡片)
     const cardContentWidth = Math.min(viewportWidth.value - sidebarWidth - 144, 1280)
-    // 高度扣除顶部 Header(64px)、上下外边距(48px)、卡片上下内边距(80px)与底部翻页控制条(48px)
     const cardContentHeight = Math.max(200, viewportHeight.value - 240)
     
-    // 获取实际铺展宽度。双栏下扣除 gap 64px；单栏下不扣除
     const activeWidth = doubleMode 
       ? Math.max(200, cardContentWidth - 64)
       : Math.max(200, cardContentWidth)
     
-    // 铺展公式：总像素面积 / 单字像素面积。
     const calculatedPageSize = Math.floor(
-      (safetyFactor * (activeWidth * cardContentHeight)) / (fontSize.value * fontSize.value * lh)
+      (safetyFactor * (activeWidth * cardContentHeight)) / (fontSize.value * fontSize.value * lhValue)
     )
     
-    // 限制单页字符在 300 到 1500 字符之间
-    const pageSize = Math.max(300, Math.min(calculatedPageSize, 1500))
+    return Math.max(300, Math.min(calculatedPageSize, 1500))
+  }
+
+  // ── 动态响应式分页列表 (数学算力防溢出排版) ──
+  const currentChapterPages = computed<string[]>(() => {
+    if (!currentChapter.value) return ['']
     
+    // 显式引用状态，确保单/双页切换和行距调整时，Pinia 触发重新计算分页
+    const doubleMode = isDoublePage.value
+    const lh = lineHeight.value
+    const text = currentChapter.value.content
+    
+    const pageSize = getPageSizeLimit(text, lh, doubleMode)
     return paginateText(text, pageSize)
   })
 
@@ -104,6 +103,18 @@ export const useReaderStore = defineStore('reader', () => {
   const currentPageContent = computed<string>(() => {
     const pageIndex = Math.min(currentPageIndex.value, totalPages.value - 1)
     return currentChapterPages.value[pageIndex] || ''
+  })
+
+  // ── 限制当前页码不越界 ──
+  function clampCurrentPage() {
+    if (currentPageIndex.value >= totalPages.value) {
+      currentPageIndex.value = Math.max(0, totalPages.value - 1)
+    }
+  }
+
+  // 当总页数因排版或章节变化而变动时，执行无缝边界修正，防越界吞页
+  watch(totalPages, () => {
+    clampCurrentPage()
   })
 
   function setBook(id: string, title: string, bookChapters: Chapter[]) {
@@ -142,15 +153,7 @@ export const useReaderStore = defineStore('reader', () => {
     } else if (currentChapterIndex.value > 0) {
       currentChapterIndex.value--
       const prevChapter = chapters.value[currentChapterIndex.value]
-      const sidebarWidth = isChatOpen.value ? 384 : 0
-      const cardContentWidth = Math.min(viewportWidth.value - sidebarWidth - 144, 1280)
-      const cardContentHeight = Math.max(200, viewportHeight.value - 240)
-      const activeWidth = Math.max(200, cardContentWidth - 64)
-      const calculatedPageSize = Math.floor(
-        (0.6 * (activeWidth * cardContentHeight)) / (fontSize.value * fontSize.value * 1.6)
-      )
-      const pageSize = Math.max(300, Math.min(calculatedPageSize, 1500))
-      
+      const pageSize = getPageSizeLimit(prevChapter.content, lineHeight.value, isDoublePage.value)
       const prevPages = paginateText(prevChapter.content, pageSize)
       currentPageIndex.value = prevPages.length - 1
       return true
@@ -200,9 +203,11 @@ export const useReaderStore = defineStore('reader', () => {
   const pendingScrollQuote = ref('')
 
   function recordCurrentProgress() {
-    latestReadProgress.value = {
-      chapterIndex: currentChapterIndex.value,
-      pageIndex: currentPageIndex.value,
+    if (!latestReadProgress.value) {
+      latestReadProgress.value = {
+        chapterIndex: currentChapterIndex.value,
+        pageIndex: currentPageIndex.value,
+      }
     }
   }
 

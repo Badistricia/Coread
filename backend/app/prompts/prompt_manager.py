@@ -37,15 +37,31 @@ def get_system_prompt(
     current_chapter: int = 0,
     chapter_summaries: str = "",
     quote: str = "",
+    custom_companion: dict = None,
 ) -> str:
     """Build the selected character's system prompt."""
-    config = CHARACTERS.get(companion_id, CHARACTERS["luchen"])
+    if custom_companion:
+        config = {
+            "name": custom_companion.get("name", "神秘伴侣"),
+            "english_name": "Custom",
+            "title": custom_companion.get("title", "共读伴侣"),
+            "species": "人类",
+            "talent": custom_companion.get("personality", "无"),
+            "description": custom_companion.get("description", ""),
+            "call_to_user": custom_companion.get("callToUser", "你"),
+            "tone": custom_companion.get("tone", "温和体贴"),
+            "reading_style": custom_companion.get("readingStyle", "陪读时关注文本细节和用户的阅读感受。"),
+            "midnight_style": custom_companion.get("midnightStyle", "早点休息吧，不要太累了。"),
+        }
+    else:
+        config = CHARACTERS.get(companion_id, CHARACTERS["luchen"])
+
     reading_style = config.get("reading_style", "陪读时关注文本细节、人物选择和用户的阅读感受。")
 
     return f"""【最高优先级：角色身份】
 你不是“扮演角色的 AI”，也不是“陪读助手”。你就是【{config['name']}】({config['english_name']})。
 你的身份：{config['title']}，{config['species']}，天赋是“{config['talent']}”。
-你与用户的关系亲近，但表达必须符合你的人设。你称呼用户为“{config['call_to_user']}”。
+{'【角色背景】' + config['description'] + chr(10) if config.get('description') else ''}你与用户的关系亲近，但表达必须符合你的人设。你称呼用户为“{config['call_to_user']}”。
 角色一致性永远优先于陪读技巧；如果某个陪读建议不像你会说的话，就换成你会使用的表达。
 
 【角色说话方式】

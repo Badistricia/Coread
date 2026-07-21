@@ -1,24 +1,26 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import ChatBox from '@/components/ChatBox.vue'
 import SelectionToolbar from '@/components/SelectionToolbar.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useReaderStore } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
-import { parseTxt, decodeText } from '@/utils/reader'
-import {
-  saveBook,
-  loadBook,
-  saveProgress,
-  loadProgress,
-  saveBookmarks,
-  loadBookmarks,
-  type Bookmark,
-} from '@/utils/storage'
+import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
+import { parseTxt, decodeText, paginateText } from '@/utils/reader'
+import { saveBook, loadBook, saveProgress, loadProgress } from '@/utils/storage'
 
+// 导入拆分出的组件
+import ReaderSideToolbar from '@/components/ReaderSideToolbar.vue'
+import BookmarkRibbon from '@/components/BookmarkRibbon.vue'
+import ReadingStatsDialog from '@/components/ReadingStatsDialog.vue'
+
+const router = useRouter()
 const chatStore = useChatStore()
 const readerStore = useReaderStore()
 const companionStore = useCompanionStore()
+const recordsStore = useReadingRecordsStore()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const readerContentRef = ref<HTMLElement | null>(null)
@@ -26,20 +28,19 @@ const isUploading = ref(false)
 const showDirectory = ref(false)
 const showChatDrawer = ref(true) // 聊天抽屉开关状态
 const showStatsDialog = ref(false) // 统计弹窗显示开关
+const showSearchDialog = ref(false) // 全文搜索结果弹窗
 
-const bookmarks = ref<Bookmark[]>([])
-
-// 载入书签
-async function initBookmarks() {
-  if (readerStore.book) {
-    const list = await loadBookmarks(readerStore.book.id)
-    bookmarks.value = list || []
-  }
+// 搜索结果项
+interface SearchResult {
+  chapterIndex: number
+  chapterTitle: string
+  pageIndex: number
+  context: string // 匹配位置周围上下文
 }
 
 // 检查当前页是否已被加为书签
 const isCurrentPageBookmarked = computed(() => {
-  return bookmarks.value.some(
+  return recordsStore.bookmarks.some(
     (b) =>
       b.chapterIndex === readerStore.currentChapterIndex &&
       b.pageIndex === readerStore.currentPageIndex
@@ -49,40 +50,29 @@ const isCurrentPageBookmarked = computed(() => {
 // 切换书签状态
 async function toggleBookmark() {
   if (!readerStore.book) return
-  const chapterIndex = readerStore.currentChapterIndex
-  const pageIndex = readerStore.currentPageIndex
-
+  
   if (isCurrentPageBookmarked.value) {
-    bookmarks.value = bookmarks.value.filter(
-      (b) => !(b.chapterIndex === chapterIndex && b.pageIndex === pageIndex)
+    const target = recordsStore.bookmarks.find(
+      (b) =>
+        b.chapterIndex === readerStore.currentChapterIndex &&
+        b.pageIndex === readerStore.currentPageIndex
     )
+    if (target) {
+      await recordsStore.removeBookmark(target.id)
+    }
   } else {
-    const firstPara = currentPageParagraphs.value[0] || ''
-    const excerpt = firstPara.slice(0, 30) + (firstPara.length > 30 ? '...' : '')
-    const newBookmark: Bookmark = {
+    const excerpt = currentPageParagraphs.value[0] || '书签章节段落'
+    const cleanExcerpt = excerpt.replace(/<[^>]*>/g, '') // 剥离 HTML 标签获取干净首段
+    await recordsStore.addBookmark({
       id: `bookmark_${Date.now()}`,
       bookId: readerStore.book.id,
-      chapterIndex,
-      pageIndex,
-      chapterTitle: readerStore.currentChapter?.title || `第 ${chapterIndex + 1} 章`,
-      excerpt,
-      createdAt: new Date().toISOString(),
-    }
-    bookmarks.value.push(newBookmark)
+      chapterIndex: readerStore.currentChapterIndex,
+      pageIndex: readerStore.currentPageIndex,
+      chapterTitle: readerStore.currentChapter?.title || '未知章节',
+      excerpt: cleanExcerpt.length > 30 ? cleanExcerpt.substring(0, 30) + '...' : cleanExcerpt,
+      createdAt: new Date().toISOString()
+    })
   }
-  await saveBookmarks(readerStore.book.id, bookmarks.value)
-}
-
-// 轮转行高选择 1.4 -> 1.6 -> 1.8 -> 2.0 -> 2.2 -> 1.4
-function cycleLineHeight() {
-  const current = readerStore.lineHeight
-  let next = 1.6
-  if (current === 1.4) next = 1.6
-  else if (current === 1.6) next = 1.8
-  else if (current === 1.8) next = 2.0
-  else if (current === 2.0) next = 2.2
-  else next = 1.4
-  readerStore.setLineHeight(next)
 }
 
 // 检查是否偏离最新进度
@@ -100,95 +90,6 @@ const latestChapterText = computed(() => {
   if (!progress) return ''
   return `第 ${progress.chapterIndex + 1} 章 · 第 ${progress.pageIndex + 1} 页`
 })
-
-// ── 统计详情看板数据聚合 ──
-
-// 聚合当前书籍当前角色的所有会话中的高亮和笔记
-const allHighlightsAndNotes = computed(() => {
-  const list: {
-    sessionId: string
-    sessionName: string
-    quote: string
-    content: string
-    chapterIndex: number
-    pageIndex: number
-    createdAt: string
-  }[] = []
-
-  chatStore.sessions.forEach(session => {
-    session.messages.forEach(msg => {
-      if (msg.role === 'user' && msg.quote) {
-        list.push({
-          sessionId: session.id,
-          sessionName: session.name,
-          quote: msg.quote,
-          content: msg.content,
-          chapterIndex: msg.chapterIndex ?? 0,
-          pageIndex: msg.pageIndex ?? 0,
-          createdAt: msg.createdAt ?? new Date().toISOString()
-        })
-      }
-    })
-  })
-  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-})
-
-// 聚合所有划线提问与 AI 回复片段
-const allAiDialogFragments = computed(() => {
-  const list: {
-    sessionId: string
-    sessionName: string
-    quote: string
-    userMessage: string
-    aiMessage: string
-    chapterIndex: number
-    pageIndex: number
-    createdAt: string
-  }[] = []
-
-  chatStore.sessions.forEach(session => {
-    const msgs = session.messages
-    for (let i = 0; i < msgs.length; i++) {
-      const m = msgs[i]
-      if (m.role === 'user' && m.quote) {
-        let j = i + 1
-        while (j < msgs.length && msgs[j].role !== 'ai') {
-          j++
-        }
-        if (j < msgs.length) {
-          const aiMsg = msgs[j]
-          list.push({
-            sessionId: session.id,
-            sessionName: session.name,
-            quote: m.quote,
-            userMessage: m.content,
-            aiMessage: cleanContent(aiMsg.content),
-            chapterIndex: m.chapterIndex ?? 0,
-            pageIndex: m.pageIndex ?? 0,
-            createdAt: m.createdAt ?? new Date().toISOString()
-          })
-        }
-      }
-    }
-  })
-  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-})
-
-// 跳转至历史进度并切换会话上下文
-function navigateToProgress(chapterIdx: number, pageIdx: number, sessionId?: string, quote?: string) {
-  readerStore.recordCurrentProgress()
-  if (quote) {
-    readerStore.pendingScrollQuote = quote
-  }
-  readerStore.currentChapterIndex = chapterIdx
-  readerStore.currentPageIndex = pageIdx
-  
-  if (sessionId) {
-    chatStore.currentSessionId = sessionId
-    showChatDrawer.value = true
-  }
-  showStatsDialog.value = false
-}
 
 // 自动滚动定位到对应的划线文本
 function scrollToPendingQuote() {
@@ -220,28 +121,16 @@ function scrollToPendingQuote() {
 }
 
 
-// 删除书签
-async function removeBookmark(id: string) {
-  bookmarks.value = bookmarks.value.filter(b => b.id !== id)
-  if (readerStore.book) {
-    await saveBookmarks(readerStore.book.id, bookmarks.value)
-  }
-}
-
-// 监控书籍切换
+// 监控书籍切换并载入所有共读记录
 watch(
   () => readerStore.book,
-  () => {
-    initBookmarks()
+  async (newBook) => {
+    if (newBook) {
+      await recordsStore.initRecords(newBook.id)
+    }
   },
   { immediate: true }
 )
-
-// 根据当前所选角色，动态呈现其专属渐变色图标
-const exclusiveThemeStyle = computed(() => {
-  const { accentStart, accentEnd } = companionStore.currentCompanion
-  return { background: `linear-gradient(135deg, ${accentStart}, ${accentEnd})` }
-})
 
 // ── 文本选择状态 ──
 const selectedText = ref('')
@@ -270,23 +159,60 @@ function onTextSelected() {
   }
 }
 
-// 划线提问交互：处理来自原位弹出框的提交
-async function onToolbarSubmit(data: { text: string; question: string }) {
-  if (!readerStore.book) return
-  
-  // 1. 自动弹出右侧聊天抽屉
-  showChatDrawer.value = true
+// ── 划线工具栏：三个独立操作 ──
 
-  // 2. 清空划线选择
+/** 纯划线高亮 */
+async function onHighlight(data: { text: string }) {
+  if (!readerStore.book) return
+  await recordsStore.addHighlight({
+    id: 'hl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
+    bookId: readerStore.book.id,
+    chapterIndex: readerStore.currentChapterIndex,
+    pageIndex: readerStore.currentPageIndex,
+    quote: data.text,
+    createdAt: new Date().toISOString()
+  })
+  ElMessage.success('已添加高亮')
+  selectedText.value = ''
+  window.getSelection()?.removeAllRanges()
+}
+
+/** 划线后写随笔笔记（不触发 AI） */
+async function onNote(data: { text: string; content: string }) {
+  if (!readerStore.book) return
+  const highlightId = 'hl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+  // 同时存划线标记和笔记
+  await recordsStore.addHighlight({
+    id: highlightId,
+    bookId: readerStore.book.id,
+    chapterIndex: readerStore.currentChapterIndex,
+    pageIndex: readerStore.currentPageIndex,
+    quote: data.text,
+    createdAt: new Date().toISOString()
+  })
+  await recordsStore.addNote({
+    id: 'note_' + Date.now(),
+    bookId: readerStore.book.id,
+    highlightId,
+    chapterIndex: readerStore.currentChapterIndex,
+    pageIndex: readerStore.currentPageIndex,
+    quote: data.text,
+    content: data.content,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  })
+  ElMessage.success('笔记已保存')
+  selectedText.value = ''
+  window.getSelection()?.removeAllRanges()
+}
+
+/** 划线后向 AI 角色提问（进入 AI 研讨片段） */
+async function onAsk(data: { text: string; question: string }) {
+  if (!readerStore.book) return
+  showChatDrawer.value = true
   selectedText.value = ''
   window.getSelection()?.removeAllRanges()
 
-  if (!data.question.trim()) {
-    chatStore.pendingQuote = data.text
-    return
-  }
-
-  // 3. 发送流式对话
   const contextText = readerStore.currentPageContent || ''
   const chapterText = readerStore.currentChapter?.content || ''
   await chatStore.streamResponse(
@@ -298,6 +224,74 @@ async function onToolbarSubmit(data: { text: string; question: string }) {
     companionStore.currentCompanionId,
     readerStore.currentChapterIndex + 1
   )
+}
+
+// ── 全文搜索 ──
+const searchResults = ref<SearchResult[]>([])
+const searchQuery = ref('')
+
+function onSearch(data: { text: string }) {
+  const query = data.text.trim()
+  if (!query || query.length < 2) {
+    ElMessage.warning('搜索内容太短，至少需要 2 个字')
+    return
+  }
+
+  const results: SearchResult[] = []
+  const chapters = readerStore.chapters
+
+  for (let ci = 0; ci < chapters.length; ci++) {
+    const content = chapters[ci].content
+    let searchFrom = 0
+
+    while (true) {
+      const idx = content.indexOf(query, searchFrom)
+      if (idx === -1) break
+
+      // 用 paginateText 确定该位置在第几页
+      const pages = paginateText(content, 800)
+      let pageIdx = 0
+      let charCount = 0
+      for (let pi = 0; pi < pages.length; pi++) {
+        charCount += pages[pi].length
+        if (idx < charCount) {
+          pageIdx = pi
+          break
+        }
+      }
+
+      // 提取上下文（前后各 20 字）
+      const ctxStart = Math.max(0, idx - 20)
+      const ctxEnd = Math.min(content.length, idx + query.length + 20)
+      let context = content.substring(ctxStart, ctxEnd).replace(/\n/g, ' ')
+      if (ctxStart > 0) context = '…' + context
+      if (ctxEnd < content.length) context = context + '…'
+
+      results.push({
+        chapterIndex: ci,
+        chapterTitle: chapters[ci].title,
+        pageIndex: pageIdx,
+        context,
+      })
+
+      searchFrom = idx + query.length
+    }
+  }
+
+  searchResults.value = results
+  searchQuery.value = query
+  showSearchDialog.value = true
+
+  selectedText.value = ''
+  window.getSelection()?.removeAllRanges()
+}
+
+/** 搜索结果跳转到指定位置 */
+function handleSearchNavigate(chapterIdx: number, pageIdx: number) {
+  readerStore.recordCurrentProgress()
+  readerStore.currentChapterIndex = chapterIdx
+  readerStore.currentPageIndex = pageIdx
+  showSearchDialog.value = false
 }
 
 // ── 导入书籍 ──
@@ -372,23 +366,48 @@ const activeAnnotations = computed(() => {
 function highlightParagraph(paraText: string) {
   let html = paraText
 
-  // 1. 先进行用户划线高亮（荧光笔实线）
+  // 0. 收集 recordsStore 中属于当前页的高亮 & 笔记 quote
+  const currentChapterIdx = readerStore.currentChapterIndex
+  const currentPageIdx = readerStore.currentPageIndex
+  const currentPageRecords: { id: string; quote: string }[] = []
+
+  recordsStore.highlights
+    .filter(h => h.chapterIndex === currentChapterIdx && h.pageIndex === currentPageIdx)
+    .forEach(h => currentPageRecords.push({ id: h.id, quote: h.quote }))
+
+  recordsStore.notes
+    .filter(n => n.chapterIndex === currentChapterIdx && n.pageIndex === currentPageIdx && n.quote)
+    .forEach(n => currentPageRecords.push({ id: n.id, quote: n.quote! }))
+
+  // 去重（同一条 quote 可能在 highlights 和 notes 都出现）
+  const uniqueRecords = currentPageRecords.filter(
+    (r, i, arr) => arr.findIndex(x => x.quote === r.quote) === i
+  )
+
+  // 1. recordsStore 手动划线 / 笔记高亮
+  uniqueRecords.forEach(rec => {
+    if (rec.quote && html.includes(rec.quote)) {
+      const escapedText = rec.quote.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
+      const regex = new RegExp(escapedText, 'g')
+      html = html.replace(regex, `<span class="user-highlight-mark" data-hl-id="${rec.id}">${rec.quote}</span>`)
+    }
+  })
+
+  // 2. chatStore 用户划线高亮（荧光笔实线）
   chatStore.messages.forEach((msg, idx) => {
     if (msg.role === 'user' && msg.quote) {
-      // 跨段落匹配处理：按行拆开匹配，确保每一段对应的行都能高亮
       const lines = msg.quote.split('\n').map(l => l.trim()).filter(Boolean)
       lines.forEach(line => {
         if (line && html.includes(line)) {
           const escapedText = line.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
           const regex = new RegExp(escapedText, 'g')
-          // 添加 data-msg-index 属性关联提问消息
           html = html.replace(regex, `<span class="user-highlight-mark" data-msg-index="${idx}">${line}</span>`)
         }
       })
     }
   })
 
-  // 2. 再进行 AI 批注高亮
+  // 3. AI 批注高亮
   activeAnnotations.value.forEach(ann => {
     if (ann.originalText && html.includes(ann.originalText)) {
       const escapedText = ann.originalText.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
@@ -562,6 +581,17 @@ watch(
   }
 )
 
+/**
+ * 角色切换守卫：流式输出期间禁止切换角色
+ */
+function handleCompanionSwitch(id: string) {
+  if (chatStore.isStreaming) {
+    ElMessage.warning('角色正在回复中，请等待完成后再切换')
+    return
+  }
+  companionStore.setCompanion(id)
+}
+
 // ── 视口改变与侧边栏折叠监听 ──
 const handleResize = () => {
   readerStore.updateViewport(window.innerWidth, window.innerHeight, showChatDrawer.value)
@@ -628,22 +658,50 @@ onMounted(async () => {
 
       <!-- 顶部配置栏 -->
       <div class="flex items-center gap-4">
-        <!-- 伴侣选择器 (外壳适配 app 变量对比，避免看不清) -->
-        <div class="flex items-center bg-stone-500/10 rounded-full p-1 border theme-border theme-header-btn shadow-xs">
-          <button
-            v-for="c in companionStore.companions"
-            :key="c.id"
-            :class="[
-              'px-4 py-1.5 text-xs font-semibold rounded-full transition-all duration-300',
-              companionStore.currentCompanionId === c.id
-                ? 'theme-bg-primary text-white shadow-sm'
-                : 'theme-text-app opacity-60 hover:opacity-100'
-            ]"
-            @click="companionStore.setCompanion(c.id)"
+        <!-- 伴侣下拉选择器 -->
+        <el-dropdown trigger="click" @command="handleCompanionSwitch">
+          <button 
+            class="flex items-center gap-2 px-3 py-1.5 rounded-full border theme-header-btn bg-stone-500/5 hover:bg-stone-500/10 transition-colors cursor-pointer text-xs font-semibold"
+            :disabled="chatStore.isStreaming"
+            :class="{ 'opacity-50 cursor-not-allowed': chatStore.isStreaming }"
           >
-            {{ c.name }}
+            <span 
+              class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
+              :style="{ background: `linear-gradient(135deg, ${companionStore.currentCompanion.accentStart}, ${companionStore.currentCompanion.accentEnd})` }"
+            ></span>
+            <span class="theme-text-app">{{ companionStore.currentCompanion.name }}</span>
+            <el-icon class="text-stone-400"><ArrowDown /></el-icon>
           </button>
-        </div>
+          
+          <template #dropdown>
+            <el-dropdown-menu class="!p-1.5 w-48">
+              <el-dropdown-item 
+                v-for="c in companionStore.allCompanions" 
+                :key="c.id" 
+                :command="c.id"
+                :class="{ 'theme-bg-primary-light !text-[var(--color-primary)] font-bold': companionStore.currentCompanionId === c.id }"
+              >
+                <div class="flex items-center gap-2 w-full">
+                  <span 
+                    class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
+                    :style="{ background: `linear-gradient(135deg, ${c.accentStart}, ${c.accentEnd})` }"
+                  ></span>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-xs truncate font-bold">{{ c.name }}</div>
+                    <div class="text-[9px] text-stone-400 truncate mt-0.5">{{ c.title }}</div>
+                  </div>
+                </div>
+              </el-dropdown-item>
+              
+              <el-dropdown-item divided @click="router.push('/companions')">
+                <div class="flex items-center justify-center gap-1.5 w-full text-xs font-bold text-[var(--color-primary)] py-0.5">
+                  <el-icon><Setting /></el-icon>
+                  管理共读角色
+                </div>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
         <!-- 导入书籍按钮 -->
         <input
@@ -708,122 +766,13 @@ onMounted(async () => {
           @click="showDirectory = false"
         ></div>
 
-        <!-- 右侧垂直悬浮面板 (三段式) -->
+        <!-- 右侧垂直悬浮面板 (三段式小组件) -->
         <div v-if="readerStore.book" class="absolute right-6 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3 theme-bg-card border theme-border shadow-lg rounded-2xl p-2.5 transition-colors duration-300">
-          <!-- 【第一段：导航控制】 -->
-          <div class="flex flex-col gap-2">
-            <!-- 目录圆钮 -->
-            <button
-              @click="showDirectory = !showDirectory"
-              title="查看目录"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            
-            <!-- 聊天抽屉折叠圆钮 -->
-            <button
-              @click="showChatDrawer = !showChatDrawer"
-              :title="showChatDrawer ? '收起聊天栏' : '展开聊天栏'"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-              :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showChatDrawer }"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </button>
-          </div>
-
-          <hr class="theme-border opacity-50" />
-
-          <!-- 【第二段：功能工具】 -->
-          <div class="flex flex-col gap-2">
-            <!-- 统计弹窗按钮 -->
-            <button
-              @click="showStatsDialog = true"
-              title="查看统计与书签笔记"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-              :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showStatsDialog }"
-            >
-              <el-icon class="text-stone-600 !text-base"><Notebook /></el-icon>
-            </button>
-          </div>
-
-          <hr class="theme-border opacity-50" />
-
-          <!-- 【第三段：阅读排版】 -->
-          <div class="flex flex-col gap-2.5 items-center">
-            <!-- 单双页切换 -->
-            <button
-              @click="readerStore.setDoublePage(!readerStore.isDoublePage)"
-              :title="readerStore.isDoublePage ? '切换为单页' : '切换为双页'"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            >
-              <span class="text-[10px] font-bold leading-none">{{ readerStore.isDoublePage ? '双页' : '单页' }}</span>
-            </button>
-
-            <!-- 行高调节 -->
-            <button
-              @click="cycleLineHeight"
-              :title="`行距: ${readerStore.lineHeight.toFixed(1)} (点击切换)`"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            >
-              <span class="text-[10px] font-bold leading-none">L:{{ readerStore.lineHeight.toFixed(1) }}</span>
-            </button>
-
-            <!-- 字号调节 -->
-            <button
-              @click="readerStore.changeFontSize(1)"
-              title="放大字号"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            >
-              A+
-            </button>
-            <button
-              @click="readerStore.changeFontSize(-1)"
-              title="缩小字号"
-              class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-[10px] font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-            >
-              A-
-            </button>
-
-            <!-- 主题色 5 色点 -->
-            <div class="flex flex-col gap-2 mt-1.5 items-center">
-              <button
-                @click="readerStore.setThemeStyle('read-theme-a')"
-                class="w-5.5 h-5.5 rounded-full border border-[#ebdcb9] bg-[#fdfaf4] cursor-pointer hover:scale-110 transition-transform"
-                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-a' }"
-                title="暖金书卷"
-              ></button>
-              <button
-                @click="readerStore.setThemeStyle('read-theme-b')"
-                class="w-5.5 h-5.5 rounded-full border border-[#e4e4e7] bg-[#ffffff] cursor-pointer hover:scale-110 transition-transform"
-                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-b' }"
-                title="冷灰极简"
-              ></button>
-              <button
-                @click="readerStore.setThemeStyle('read-theme-c')"
-                class="w-5.5 h-5.5 rounded-full border border-[#eedecf] bg-[#fbf8f3] cursor-pointer hover:scale-110 transition-transform"
-                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-c' }"
-                title="奶茶温柔"
-              ></button>
-              <button
-                @click="readerStore.setThemeStyle('read-theme-dark')"
-                class="w-5.5 h-5.5 rounded-full border border-zinc-700 bg-[#1c1c1e] cursor-pointer hover:scale-110 transition-transform"
-                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-dark' }"
-                title="夜间暗黑"
-              ></button>
-              <button
-                @click="readerStore.setThemeStyle('read-theme-exclusive')"
-                class="w-5.5 h-5.5 rounded-full border border-stone-300 cursor-pointer hover:scale-110 transition-transform shadow-xs"
-                :style="exclusiveThemeStyle"
-                :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-exclusive' }"
-                :title="companionStore.currentCompanionId === 'luchen' ? '陆沉专属 · 幻惑之瞳' : '萧逸专属 · 极速之耀'"
-              ></button>
-            </div>
-          </div>
+          <ReaderSideToolbar
+            v-model:showChatDrawer="showChatDrawer"
+            @toggleDirectory="showDirectory = !showDirectory"
+            @openStats="showStatsDialog = true"
+          />
         </div>
 
         <!-- 空白导入状态 -->
@@ -850,25 +799,11 @@ onMounted(async () => {
           v-else
           class="flex-1 max-w-7xl mx-auto w-full theme-bg-card theme-text-card rounded-2xl shadow-lg border theme-border flex flex-col justify-between px-10 py-8 my-3 relative transition-all duration-300 min-h-0"
         >
-          <!-- 下落式书签触发区 -->
-          <div
-            class="absolute top-0 right-12 w-10 h-16 cursor-pointer group z-20"
-            @click="toggleBookmark"
-            :title="isCurrentPageBookmarked ? '取消书签' : '加入书签'"
-          >
-            <div
-              class="w-6 h-14 mx-auto transition-all duration-300 flex items-center justify-center transform"
-              :class="[
-                isCurrentPageBookmarked
-                  ? 'translate-y-0 text-[var(--color-primary)]'
-                  : '-translate-y-8 opacity-20 group-hover:translate-y-0 group-hover:opacity-100 text-stone-400'
-              ]"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-14" viewBox="0 0 24 36" fill="currentColor">
-                <path d="M5 2h14a2 2 0 0 1 2 2v30l-9-6-9 6V4a2 2 0 0 1 2-2z" />
-              </svg>
-            </div>
-          </div>
+          <!-- 下落式书签 (独立小组件) -->
+          <BookmarkRibbon
+            :is-bookmarked="isCurrentPageBookmarked"
+            @toggle="toggleBookmark"
+          />
 
           <!-- 毛玻璃进度一键切回提示条 -->
           <Transition name="fade-scale">
@@ -953,12 +888,15 @@ onMounted(async () => {
       </Transition>
     </main>
 
-    <!-- 选区原位划线工具栏 (submit 映射为就地提问) -->
+    <!-- 选区原位划线工具栏（三按钮：划线 | 笔记 | 问问xxx） -->
     <SelectionToolbar
       :selected-text="selectedText"
       :x="selectionX"
       :y="selectionY"
-      @submit="onToolbarSubmit"
+      @highlight="onHighlight"
+      @note="onNote"
+      @ask="onAsk"
+      @search="onSearch"
     />
 
     <!-- 荧光划线点击气泡追问浮窗 -->
@@ -1029,135 +967,62 @@ onMounted(async () => {
         </div>
       </div>
     </Transition>
-    <!-- 统计详情弹窗 (书签/高亮笔记/AI 对话) -->
-    <el-dialog
+    <!-- 统计详情弹窗 (独立小组件) -->
+    <ReadingStatsDialog
       v-model="showStatsDialog"
-      title="共读记录与统计看板"
-      width="800px"
+      @open-chat-drawer="showChatDrawer = true"
+    />
+
+    <!-- 全文搜索结果弹窗 -->
+    <el-dialog
+      v-model="showSearchDialog"
+      :title="'全文搜索：' + searchQuery"
+      width="700px"
       destroy-on-close
       class="stats-dialog !rounded-2xl"
     >
-      <el-tabs type="border-card" class="rounded-xl overflow-hidden border theme-border">
-        <!-- 1. 书签看板 -->
-        <el-tab-pane label="我的书签">
-          <div v-if="bookmarks.length === 0" class="text-stone-400 text-xs py-8 text-center">
-            暂无书签。在书页右上角可添加书签。
-          </div>
-          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
-            <div
-              v-for="b in bookmarks"
-              :key="b.id"
-              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all flex items-center justify-between gap-4"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 text-xs font-bold text-[var(--color-primary)]">
-                  <span>{{ b.chapterTitle }}</span>
-                  <span class="opacity-60 font-normal text-[10px]">第 {{ b.pageIndex + 1 }} 页</span>
-                </div>
-                <p class="text-xs text-[var(--color-read-text)] italic mt-1.5 truncate">
-                  “{{ b.excerpt }}”
-                </p>
-              </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <el-button
-                  size="small"
-                  type="primary"
-                  plain
-                  @click="navigateToProgress(b.chapterIndex, b.pageIndex, undefined, b.excerpt)"
-                >
-                  跳转
-                </el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  plain
-                  icon="Delete"
-                  circle
-                  @click="removeBookmark(b.id)"
-                />
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
+      <template v-if="searchResults.length === 0">
+        <div class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
+          <svg class="w-10 h-10 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <div class="text-xs font-bold text-stone-500">未找到匹配结果</div>
+          <p class="text-[10px] opacity-70">尝试缩短搜索词或更换关键词。</p>
+        </div>
+      </template>
 
-        <!-- 2. 高亮与笔记看板 -->
-        <el-tab-pane label="高亮与随笔">
-          <div v-if="allHighlightsAndNotes.length === 0" class="text-stone-400 text-xs py-8 text-center">
-            暂无高亮或随感。在阅读中划线即可提问或高亮。
+      <div v-else class="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+        <div class="text-[10px] text-stone-400 mb-2">共找到 {{ searchResults.length }} 处匹配</div>
+        <div
+          v-for="(r, i) in searchResults"
+          :key="i"
+          class="flex items-start gap-3 p-3 rounded-xl bg-stone-500/5 hover:bg-stone-500/10 border border-stone-200/60 transition-colors cursor-pointer group"
+          @click="handleSearchNavigate(r.chapterIndex, r.pageIndex)"
+        >
+          <!-- 章节页码标记 -->
+          <div class="shrink-0 flex flex-col items-center min-w-[44px]">
+            <span class="text-[10px] font-bold text-[var(--color-primary)]">{{ r.chapterTitle }}</span>
+            <span class="text-[9px] text-stone-400">第 {{ r.pageIndex + 1 }} 页</span>
           </div>
-          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
-            <div
-              v-for="(hn, idx) in allHighlightsAndNotes"
-              :key="idx"
-              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all"
-            >
-              <div class="flex items-center justify-between text-[10px] text-stone-400">
-                <span class="font-semibold text-[var(--color-primary)]">会话: {{ hn.sessionName }}</span>
-                <span>{{ new Date(hn.createdAt).toLocaleString() }}</span>
-              </div>
-              <div class="mt-2 pl-2.5 border-l-2 border-[var(--color-primary)] text-xs text-[var(--color-read-text)] italic bg-black/5 p-1.5 rounded">
-                “{{ hn.quote }}”
-              </div>
-              <div v-if="hn.content" class="mt-2 text-xs text-[var(--color-read-text)] leading-relaxed">
-                <strong class="text-[10px] opacity-60 block">我的随感：</strong>
-                {{ hn.content }}
-              </div>
-              <div class="mt-2.5 flex justify-end">
-                <el-button
-                  size="small"
-                  type="primary"
-                  plain
-                  @click="navigateToProgress(hn.chapterIndex, hn.pageIndex, hn.sessionId, hn.quote)"
-                >
-                  定位到书页
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
 
-        <!-- 3. AI 对话片段看板 -->
-        <el-tab-pane label="AI 研讨片段">
-          <div v-if="allAiDialogFragments.length === 0" class="text-stone-400 text-xs py-8 text-center">
-            暂无共读研讨对话。在书页中划线提问伴侣即可生成。
+          <!-- 上下文片段 -->
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-[var(--color-read-text)] leading-relaxed line-clamp-2">
+              {{ r.context }}
+            </p>
           </div>
-          <div v-else class="max-h-[350px] overflow-y-auto space-y-2.5 pr-1">
-            <div
-              v-for="(f, idx) in allAiDialogFragments"
-              :key="idx"
-              class="p-3 bg-stone-500/5 hover:bg-stone-500/10 border theme-border rounded-xl transition-all"
-            >
-              <div class="flex items-center justify-between text-[10px] text-stone-400">
-                <span class="font-semibold text-[var(--color-primary)]">会话: {{ f.sessionName }}</span>
-                <span>{{ new Date(f.createdAt).toLocaleString() }}</span>
-              </div>
-              <div class="mt-2 pl-2 border-l-2 border-[var(--color-primary)] text-[10px] text-stone-500 italic truncate">
-                研讨原文：“{{ f.quote }}”
-              </div>
-              <div class="mt-2.5 space-y-2">
-                <div class="text-xs text-[var(--color-read-text)] bg-[var(--color-bg-bubble-user)]/40 p-2 rounded-lg">
-                  <span class="font-bold text-[var(--color-text-bubble-user)] text-[10px] block mb-0.5">我：</span>
-                  {{ f.userMessage }}
-                </div>
-                <div class="text-xs text-[var(--color-read-text)] bg-[var(--color-bg-bubble-ai)]/40 border theme-border p-2 rounded-lg">
-                  <span class="font-bold text-[var(--color-text-bubble-ai)] text-[10px] block mb-0.5">{{ companionStore.currentCompanion.name }}：</span>
-                  {{ f.aiMessage }}
-                </div>
-              </div>
-              <div class="mt-2.5 flex justify-end">
-                <el-button
-                  size="small"
-                  type="primary"
-                  plain
-                  @click="navigateToProgress(f.chapterIndex, f.pageIndex, f.sessionId, f.quote)"
-                >
-                  回到当时语境
-                </el-button>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
+
+          <!-- 跳转按钮 -->
+          <button
+            class="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium cursor-pointer transition-all border bg-[var(--color-primary)]/5 text-[var(--color-primary)] border-[var(--color-primary)]/15 opacity-0 group-hover:opacity-100 hover:bg-[var(--color-primary)]/10 active:scale-95"
+          >
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/><path d="M2 12h20"/>
+            </svg>
+            <span>跳转</span>
+          </button>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>

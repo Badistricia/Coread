@@ -1,4 +1,4 @@
-import type { Companion } from '@/stores/companionStore'
+import type { Companion } from '@/repositories/types'
 
 export const companions: Companion[] = [
   {

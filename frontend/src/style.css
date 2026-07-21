@@ -408,18 +408,29 @@ html, body, #app {
   }
 }
 
+.ai-loading-bubble {
+  padding: 6px 12px !important;
+  border-radius: 9999px !important;
+  width: fit-content !important;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  clear: both;
+  margin-top: 4px;
+}
+
 .chat-bubble-dots {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 6px;
-  height: 16px;
+  height: 18px;
 }
 
 .chat-bubble-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background-color: currentColor;
   animation: bubble-dots 1.4s infinite ease-in-out;

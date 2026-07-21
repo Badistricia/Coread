@@ -4,6 +4,7 @@ import type { Ref } from 'vue'
 import { saveChatSessions, loadChatSessions } from '@/utils/storage'
 import { useReaderStore } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
+import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 
 export interface ChatMessage {
   role: 'user' | 'ai'
@@ -30,6 +31,7 @@ export const useChatStore = defineStore('chat', () => {
   const sessions: Ref<ChatSession[]> = ref([])
   const currentSessionId: Ref<string> = ref('')
   const isStreaming = ref(false)
+  let abortController: AbortController | null = null
 
   // ── 待发送划线引用 ──
   const pendingQuote = ref('')
@@ -157,7 +159,16 @@ export const useChatStore = defineStore('chat', () => {
     currentChapter: number
   ) {
     if (isStreaming.value || !currentSession.value) return
+
+    // 取消上一个未完成的流式请求
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+
     isStreaming.value = true
+    let isSuccess = false
+    abortController = new AbortController()
 
     // 1. 构建当前会话的多轮历史
     const historyPayload = currentSession.value.messages
@@ -210,7 +221,9 @@ export const useChatStore = defineStore('chat', () => {
           companion_id: companionId,
           history: historyPayload,
           quote: quoteText, // 传递独立的引用原文
+          custom_companion: companionStore.currentCompanion.isCustom ? companionStore.currentCompanion : undefined
         }),
+        signal: abortController.signal,
       })
 
       if (!response.ok) {
@@ -253,13 +266,21 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
       }
-    } catch (err) {
-      console.error('SSE Error:', err)
-      if (currentSession.value) {
-        currentSession.value.messages[aiMessageIdx].content = '（好像出了一点小状况，等会儿再试吧。）'
+      isSuccess = true
+    } catch (err: any) {
+      // AbortError 是正常的取消操作，不需要显示错误
+      if (err?.name === 'AbortError') {
+        // 静默处理：请求被取消（通常是角色切换触发）
+        console.log('[chat] 流式请求已被取消')
+      } else {
+        console.error('SSE Error:', err)
+        if (currentSession.value) {
+          currentSession.value.messages[aiMessageIdx].content = '（好像出了一点小状况，等会儿再试吧。）'
+        }
       }
     } finally {
       isStreaming.value = false
+      abortController = null
       try {
         if (currentSession.value && currentSession.value.messages[aiMessageIdx]) {
           currentSession.value.messages[aiMessageIdx].isStreaming = false
@@ -271,6 +292,30 @@ export const useChatStore = defineStore('chat', () => {
             const originalText = match[1]
             const annotationComment = match[2]
             console.log(`[Phase 1] 捕获到 AI 批注： 原文「${originalText}」 -> 批注「${annotationComment}」`)
+          }
+          
+          // 写入 AI 研讨片段（不再重复写入 highlights/notes，那是独立操作）
+          if (isSuccess && quoteText) {
+            const recordsStore = useReadingRecordsStore()
+            
+            if (lastMsg && lastMsg !== '（好像出了一点小状况，等会儿再试吧。）') {
+              try {
+                await recordsStore.addAiFragment({
+                  id: 'aifrag_' + Date.now(),
+                  bookId: _bookId,
+                  companionId,
+                  sessionId: currentSession.value.id,
+                  chapterIndex: readerStore.currentChapterIndex,
+                  pageIndex: readerStore.currentPageIndex,
+                  quote: quoteText,
+                  userMessage: userMsg,
+                  aiMessage: cleanForPrompt(lastMsg),
+                  createdAt: new Date().toISOString()
+                })
+              } catch (writeErr) {
+                console.error('Failed to write AI fragment:', writeErr)
+              }
+            }
           }
         }
       } catch (err) {

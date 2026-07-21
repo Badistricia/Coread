@@ -4,6 +4,7 @@
 Phase 1：无数据库、无章节摘要，防剧透降级。
 """
 
+from typing import Optional
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -36,6 +37,7 @@ class ChatRequest(BaseModel):
     companion_id: str = "luchen"
     history: list[ChatMessage] = []
     quote: str = ""  # 用户选中的划线原文
+    custom_companion: Optional[dict] = None
 
 
 @router.post("/chat")
@@ -49,6 +51,7 @@ async def chat(req: ChatRequest):
         current_chapter=req.current_chapter,
         chapter_summaries="",
         quote=req.quote,
+        custom_companion=req.custom_companion,
     )
     user = get_user_message(
         companion_id=req.companion_id,

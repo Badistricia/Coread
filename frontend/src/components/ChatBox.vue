@@ -3,6 +3,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReaderStore } from '@/stores/readerStore'
+import SessionManager from '@/components/SessionManager.vue'
 
 const chatStore = useChatStore()
 const companionStore = useCompanionStore()
@@ -89,9 +90,7 @@ function createNewSession() {
 
 function clearCurrentSession() {
   if (!readerStore.book) return
-  if (confirm('确认清空当前会话的消息记录吗？')) {
-    chatStore.clearCurrentSession(readerStore.book.id, companionStore.currentCompanionId)
-  }
+  chatStore.clearCurrentSession(readerStore.book.id, companionStore.currentCompanionId)
 }
 
 /**
@@ -100,166 +99,58 @@ function clearCurrentSession() {
 function cleanContent(content: string) {
   return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
 }
-
-// ── 会话名称重命名状态与逻辑 ──
-const isEditingSessionName = ref(false)
-const editSessionNameInput = ref('')
-const renameInputRef = ref<any>(null)
-
-function startRenameSession() {
-  const current = chatStore.currentSession
-  if (current) {
-    editSessionNameInput.value = current.name
-    isEditingSessionName.value = true
-    nextTick(() => {
-      renameInputRef.value?.focus()
-    })
-  }
-}
-
-function finishRenameSession() {
-  if (!isEditingSessionName.value) return
-  isEditingSessionName.value = false
-  const newName = editSessionNameInput.value.trim()
-  if (newName && readerStore.book && companionStore.currentCompanionId && chatStore.currentSessionId) {
-    chatStore.updateSessionName(
-      readerStore.book.id,
-      companionStore.currentCompanionId,
-      chatStore.currentSessionId,
-      newName
-    )
-  }
-}
-
-function cancelRenameSession() {
-  isEditingSessionName.value = false
-}
 </script>
 
 <template>
   <aside class="w-96 h-full min-h-0 shrink-0 border-l theme-border flex flex-col theme-bg-chat shadow-md z-10 transition-colors duration-300">
-    <!-- 伴侣状态与多会话管理器 -->
-    <div class="px-4 py-3 border-b theme-border flex items-center justify-between bg-stone-500/10 shrink-0">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-full theme-avatar text-white flex items-center justify-center text-xs font-bold shadow-inner shrink-0">
-          {{ companionStore.currentCompanion.name[0] }}
-        </div>
-        <div>
-          <h3 class="text-sm font-bold text-[var(--color-read-title)] leading-tight">{{ companionStore.currentCompanion.name }}</h3>
-          <p class="text-[11px] opacity-60 font-sans tracking-wide leading-tight mt-0.5">
-            {{ companionStore.currentCompanion.title }}
-          </p>
-        </div>
-      </div>
-
-      <!-- 会话选择与管理 -->
-      <div class="flex items-center gap-1 shrink-0">
-        <div v-if="isEditingSessionName" class="flex items-center gap-1">
-          <el-input
-            v-model="editSessionNameInput"
-            size="small"
-            ref="renameInputRef"
-            class="!w-24"
-            @keyup.enter="finishRenameSession"
-            @keyup.esc="cancelRenameSession"
-          />
-          <el-button
-            type="success"
-            size="small"
-            circle
-            @click="finishRenameSession"
-            title="确认保存"
-            class="!p-0 !h-6 !w-6"
-          >
-            <el-icon><Check /></el-icon>
-          </el-button>
-          <el-button
-            type="info"
-            size="small"
-            circle
-            plain
-            @click="cancelRenameSession"
-            title="取消编辑"
-            class="!p-0 !h-6 !w-6 !ml-0"
-          >
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
-        <div v-else class="flex items-center gap-1">
-          <el-select
-            v-model="chatStore.currentSessionId"
-            size="small"
-            class="!w-24"
-            placeholder="选择会话"
-          >
-            <el-option
-              v-for="s in chatStore.sessions"
-              :key="s.id"
-              :label="s.name"
-              :value="s.id"
-            />
-          </el-select>
-          <el-button
-            size="small"
-            circle
-            @click="startRenameSession"
-            title="重命名当前会话"
-            class="!p-0 !h-6 !w-6"
-          >
-            <el-icon><Edit /></el-icon>
-          </el-button>
-        </div>
-        <el-button
-          size="small"
-          @click="createNewSession"
-          title="新建会话"
-          class="!text-[10px] !px-2 !py-1 !h-6 !w-auto !ml-0"
-        >
-          新建
-        </el-button>
-        <el-button
-          size="small"
-          type="danger"
-          plain
-          @click="clearCurrentSession"
-          title="清空当前会话"
-          class="!text-[10px] !px-2 !py-1 !h-6 !w-auto !ml-0"
-        >
-          清空
-        </el-button>
-      </div>
-    </div>
+    <!-- 伴侣状态与多会话管理器 (子组件) -->
+    <SessionManager
+      v-if="readerStore.book"
+      :sessions="chatStore.sessions"
+      :current-session-id="chatStore.currentSessionId"
+      @select="id => chatStore.currentSessionId = id"
+      @create="createNewSession"
+      @rename="name => chatStore.updateSessionName(readerStore.book!.id, companionStore.currentCompanionId, chatStore.currentSessionId, name)"
+      @clear="clearCurrentSession"
+    />
 
     <!-- 聊天记录区域 -->
     <div ref="messageContainer" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-stone-500/5">
-      <div
-        v-for="(msg, i) in chatStore.messages"
-        :key="i"
-        :class="[
-          'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all duration-300 w-fit clear-both',
-          msg.role === 'user'
-            ? 'ml-auto bg-[var(--color-bg-bubble-user)] text-[var(--color-text-bubble-user)] rounded-br-none'
-            : 'mr-auto bg-[var(--color-bg-bubble-ai)] text-[var(--color-text-bubble-ai)] border theme-border rounded-bl-none',
-          msg.isStreaming && msg.content ? 'typewriter-loading' : ''
-        ]"
-      >
-        <!-- 引用原文卡片 -->
-        <div
-          v-if="msg.role === 'user' && msg.quote"
-          class="mb-1.5 p-2 rounded-lg bg-black/5 border-l-2 border-[var(--color-primary)] text-[10px] leading-relaxed opacity-75 italic text-stone-700 select-none"
+      <template v-for="(msg, i) in chatStore.messages" :key="i">
+        <!-- 状态A：等待 AI 加载中 (显示精致微型 loading 气泡) -->
+        <div 
+          v-if="msg.role === 'ai' && !msg.content && msg.isStreaming"
+          class="ai-loading-bubble bg-[var(--color-bg-bubble-ai)] text-[var(--color-text-bubble-ai)] border theme-border mr-auto shadow-sm"
         >
-          “{{ msg.quote }}”
+          <div class="chat-bubble-dots">
+            <span class="chat-bubble-dot"></span>
+            <span class="chat-bubble-dot"></span>
+            <span class="chat-bubble-dot"></span>
+          </div>
         </div>
-        
-        <!-- 等待 AI 消息加载状态 -->
-        <div v-if="msg.role === 'ai' && !msg.content && msg.isStreaming" class="chat-bubble-dots">
-          <span class="chat-bubble-dot"></span>
-          <span class="chat-bubble-dot"></span>
-          <span class="chat-bubble-dot"></span>
+
+        <!-- 状态B：普通用户/AI 气泡 -->
+        <div
+          v-else
+          :class="[
+            'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all duration-300 w-fit clear-both mt-4 first:mt-0',
+            msg.role === 'user'
+              ? 'ml-auto bg-[var(--color-bg-bubble-user)] text-[var(--color-text-bubble-user)] rounded-br-none'
+              : 'mr-auto bg-[var(--color-bg-bubble-ai)] text-[var(--color-text-bubble-ai)] border theme-border rounded-bl-none',
+            msg.isStreaming && msg.content ? 'typewriter-loading' : ''
+          ]"
+        >
+          <!-- 引用原文卡片 -->
+          <div
+            v-if="msg.role === 'user' && msg.quote"
+            class="mb-1.5 p-2 rounded-lg bg-black/5 border-l-2 border-[var(--color-primary)] text-[10px] leading-relaxed opacity-75 italic text-stone-700 select-none"
+          >
+            “{{ msg.quote }}”
+          </div>
+          
+          <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
         </div>
-        
-        <p v-else class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
-      </div>
+      </template>
       
       <!-- 引导状态 -->
       <div v-if="chatStore.messages.length === 0" class="text-stone-400 text-sm text-center pt-12 space-y-1">
@@ -270,43 +161,53 @@ function cancelRenameSession() {
       </div>
     </div>
 
-    <!-- 待发送引用选区展示 -->
-    <div
-      v-if="chatStore.pendingQuote"
-      class="px-4 py-2 border-t theme-border bg-stone-500/5 flex items-center justify-between text-xs text-stone-500 transition-all duration-300"
-    >
-      <div class="flex items-center gap-1.5 overflow-hidden pr-2">
-        <span class="font-bold shrink-0 theme-text-primary">引用原文:</span>
-        <span class="truncate italic text-[var(--color-read-text)]">“{{ chatStore.pendingQuote }}”</span>
-      </div>
-      <button
-        @click="chatStore.pendingQuote = ''"
-        class="shrink-0 text-stone-400 hover:text-stone-600 transition-colors px-1"
-      >
-        ✕
-      </button>
-    </div>
-
-    <!-- 输入发送区域 -->
-    <div class="border-t theme-border p-4 theme-bg-chat transition-colors duration-300">
-      <div class="flex gap-2">
-        <textarea
-          v-model="input"
-          ref="inputField"
-          rows="1"
-          :placeholder="chatStore.pendingQuote ? '针对选中文字输入你的想法...' : '输入你的想法或提问...'"
-          class="flex-1 rounded-xl border theme-border px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] bg-[var(--color-read-bg)] text-[var(--color-read-text)] transition-all resize-none"
-          @input="autoResize"
-          @keydown="onEnterSend"
-          :disabled="chatStore.isStreaming"
-        />
-        <button
-          class="rounded-xl theme-bg-primary px-5 py-2.5 text-sm font-semibold text-white theme-bg-primary-hover shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
-          @click="send"
-          :disabled="(!input.trim() && !chatStore.pendingQuote) || chatStore.isStreaming"
+    <!-- 统一输入发送 Composer -->
+    <div class="border-t theme-border p-4 theme-bg-chat transition-colors duration-300 shrink-0">
+      <div class="rounded-2xl border theme-border bg-[var(--color-read-bg)] focus-within:ring-2 focus-within:ring-[var(--color-primary)] overflow-hidden flex flex-col transition-all">
+        <!-- 待发送引用选区展示 (嵌在 composer 内部顶部) -->
+        <div
+          v-if="chatStore.pendingQuote"
+          class="px-3.5 py-2 border-b theme-border bg-stone-500/5 flex items-center justify-between text-xs text-stone-500 transition-all duration-300"
         >
-          {{ chatStore.isStreaming ? '回复中' : '发送' }}
-        </button>
+          <div class="flex items-center gap-1.5 overflow-hidden pr-2">
+            <span class="font-bold shrink-0 text-[var(--color-primary)]">引用:</span>
+            <span class="truncate italic text-[var(--color-read-text)]">“{{ chatStore.pendingQuote }}”</span>
+          </div>
+          <button
+            @click="chatStore.pendingQuote = ''"
+            class="shrink-0 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer flex items-center justify-center p-0.5 rounded-full hover:bg-stone-500/10"
+          >
+            <el-icon class="!text-[10px]"><Close /></el-icon>
+          </button>
+        </div>
+
+        <!-- 输入框 + 发送按钮 -->
+        <div class="flex items-end p-2 gap-2">
+          <textarea
+            v-model="input"
+            ref="inputField"
+            rows="1"
+            :placeholder="chatStore.pendingQuote ? '针对选中文字输入你的想法...' : '输入你的想法或提问...'"
+            class="flex-1 px-2.5 py-2 text-xs bg-transparent text-[var(--color-read-text)] border-none focus:outline-none resize-none min-h-[32px] max-h-[120px]"
+            @input="autoResize"
+            @keydown="onEnterSend"
+            :disabled="chatStore.isStreaming"
+          />
+          
+          <el-button
+            type="primary"
+            circle
+            :loading="chatStore.isStreaming"
+            :disabled="(!input.trim() && !chatStore.pendingQuote) || chatStore.isStreaming"
+            @click="send"
+            class="shrink-0 !h-8 !w-8"
+          >
+            <template #loading>
+              <el-icon class="is-loading"><Loading /></el-icon>
+            </template>
+            <el-icon v-if="!chatStore.isStreaming"><Promotion /></el-icon>
+          </el-button>
+        </div>
       </div>
     </div>
   </aside>

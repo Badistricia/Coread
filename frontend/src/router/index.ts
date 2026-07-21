@@ -8,6 +8,11 @@ const router = createRouter({
       name: 'reader',
       component: () => import('@/views/ReaderView.vue'),
     },
+    {
+      path: '/companions',
+      name: 'companions',
+      component: () => import('@/views/MyCompanionsView.vue'),
+    },
   ],
 })
 
