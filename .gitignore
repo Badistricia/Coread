@@ -97,7 +97,7 @@ backend/.env
 *.db
 *.sqlite
 *.sqlite3
-
+*.md
 # ==========================================================================
 # Log Files
 # ==========================================================================
@@ -113,6 +113,9 @@ pnpm-debug.log*
 /*.txt
 /*.png
 /*.html
+/COREAD_ARCHITECTURE.md
+/PHASE1_COMPLETION_GUIDE.md
+/PHASE2_UI_OPTIMIZATION_PLAN.md
 
 # Lock files
 package-lock.json
