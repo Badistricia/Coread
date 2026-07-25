@@ -4,6 +4,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReaderStore } from '@/stores/readerStore'
 import SessionManager from '@/components/SessionManager.vue'
+import type { ChatScene } from '@/stores/chatStore'
 
 const chatStore = useChatStore()
 const companionStore = useCompanionStore()
@@ -12,6 +13,14 @@ const readerStore = useReaderStore()
 const input = ref('')
 const messageContainer = ref<HTMLDivElement | null>(null)
 const inputField = ref<HTMLTextAreaElement | null>(null)
+
+const quickActions: { label: string; scene: ChatScene; message: string }[] = [
+  { label: '这段什么意思？', scene: 'quick_explain', message: '这段什么意思？' },
+  { label: '聊聊你的感受', scene: 'quick_feeling', message: '聊聊你读到这里的感受。' },
+  { label: '继续读吧', scene: 'continue', message: '陪我继续读吧。' },
+  { label: '戳你一下', scene: 'playful_ping', message: '戳你一下。' },
+  { label: '想听你说话', scene: 'companion_idle', message: '想听你说句话。' },
+]
 
 function scrollToBottom() {
   if (messageContainer.value) {
@@ -79,7 +88,26 @@ function send() {
     chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
-    readerStore.currentChapterIndex + 1
+    readerStore.currentChapterIndex + 1,
+    { scene: quoteText ? 'quote' : 'general' }
+  )
+}
+
+function sendQuickAction(scene: ChatScene, message: string) {
+  if (chatStore.isStreaming || !readerStore.book) return
+
+  const quoteText = chatStore.pendingQuote.trim()
+  chatStore.pendingQuote = ''
+
+  chatStore.streamResponse(
+    message,
+    quoteText,
+    readerStore.currentPageContent || '',
+    readerStore.currentChapter?.content || '',
+    readerStore.book.id,
+    companionStore.currentCompanionId,
+    readerStore.currentChapterIndex + 1,
+    { scene }
   )
 }
 
@@ -163,6 +191,18 @@ function cleanContent(content: string) {
 
     <!-- 统一输入发送 Composer -->
     <div class="border-t theme-border p-4 theme-bg-chat transition-colors duration-300 shrink-0">
+      <div class="flex flex-wrap gap-1.5 mb-3">
+        <button
+          v-for="action in quickActions"
+          :key="action.scene"
+          class="px-2.5 py-1 rounded-full border theme-border bg-stone-500/5 hover:bg-stone-500/10 text-[10px] font-semibold text-[var(--color-read-text)] transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          :disabled="chatStore.isStreaming"
+          @click="sendQuickAction(action.scene, action.message)"
+        >
+          {{ action.label }}
+        </button>
+      </div>
+
       <div class="rounded-2xl border theme-border bg-[var(--color-read-bg)] focus-within:ring-2 focus-within:ring-[var(--color-primary)] overflow-hidden flex flex-col transition-all">
         <!-- 待发送引用选区展示 (嵌在 composer 内部顶部) -->
         <div
@@ -177,7 +217,7 @@ function cleanContent(content: string) {
             @click="chatStore.pendingQuote = ''"
             class="shrink-0 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer flex items-center justify-center p-0.5 rounded-full hover:bg-stone-500/10"
           >
-            <el-icon class="!text-[10px]"><Close /></el-icon>
+            <Close class="w-2.5 h-2.5" />
           </button>
         </div>
 
@@ -194,19 +234,15 @@ function cleanContent(content: string) {
             :disabled="chatStore.isStreaming"
           />
           
-          <el-button
-            type="primary"
-            circle
-            :loading="chatStore.isStreaming"
+          <button
             :disabled="(!input.trim() && !chatStore.pendingQuote) || chatStore.isStreaming"
             @click="send"
-            class="shrink-0 !h-8 !w-8"
+            class="shrink-0 h-8 w-8 rounded-full theme-bg-primary text-white flex items-center justify-center shadow-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-45 disabled:pointer-events-none"
+            title="发送"
           >
-            <template #loading>
-              <el-icon class="is-loading"><Loading /></el-icon>
-            </template>
-            <el-icon v-if="!chatStore.isStreaming"><Promotion /></el-icon>
-          </el-button>
+            <Loading v-if="chatStore.isStreaming" class="w-4 h-4 animate-spin" />
+            <Promotion v-else class="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>

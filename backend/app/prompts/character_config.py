@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Character config loader.
 
 Characters are stored in ``backend/characters.json`` so they can be edited

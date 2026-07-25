@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import ChatBox from '@/components/ChatBox.vue'
 import SelectionToolbar from '@/components/SelectionToolbar.vue'
 import { useChatStore } from '@/stores/chatStore'
-import { useReaderStore } from '@/stores/readerStore'
+import { useReaderStore, type BookType } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 import { parseTxt, decodeText, paginateText } from '@/utils/reader'
@@ -29,6 +28,40 @@ const showDirectory = ref(false)
 const showChatDrawer = ref(true) // 聊天抽屉开关状态
 const showStatsDialog = ref(false) // 统计弹窗显示开关
 const showSearchDialog = ref(false) // 全文搜索结果弹窗
+const lastPageTurnAt = ref(Date.now())
+const nightReminderInFlight = ref(false)
+const showCompanionMenu = ref(false)
+const showBookTypeMenu = ref(false)
+const toast = ref<{ text: string; tone: 'success' | 'warning' | 'error' } | null>(null)
+let toastTimer: number | undefined
+
+const bookTypeOptions: { value: BookType; label: string; hint: string }[] = [
+  { value: 'default', label: '默认', hint: '按文本自然调整' },
+  { value: 'literature', label: '文学/经典', hint: '适度讨论语言与结构' },
+  { value: 'romance', label: '言情/轻松', hint: '更关注情绪与关系' },
+]
+
+const currentBookTypeLabel = computed(() => {
+  return bookTypeOptions.find((item) => item.value === readerStore.bookType)?.label || '默认'
+})
+
+function notify(text: string, tone: 'success' | 'warning' | 'error' = 'success') {
+  toast.value = { text, tone }
+  if (toastTimer) window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toast.value = null
+  }, 2200)
+}
+
+function selectBookType(type: BookType) {
+  readerStore.setBookType(type)
+  showBookTypeMenu.value = false
+}
+
+function closeFloatingMenus() {
+  showCompanionMenu.value = false
+  showBookTypeMenu.value = false
+}
 
 // 搜索结果项
 interface SearchResult {
@@ -172,7 +205,7 @@ async function onHighlight(data: { text: string }) {
     quote: data.text,
     createdAt: new Date().toISOString()
   })
-  ElMessage.success('已添加高亮')
+  notify('已添加高亮')
   selectedText.value = ''
   window.getSelection()?.removeAllRanges()
 }
@@ -201,7 +234,7 @@ async function onNote(data: { text: string; content: string }) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   })
-  ElMessage.success('笔记已保存')
+  notify('笔记已保存')
   selectedText.value = ''
   window.getSelection()?.removeAllRanges()
 }
@@ -222,7 +255,8 @@ async function onAsk(data: { text: string; question: string }) {
     chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
-    readerStore.currentChapterIndex + 1
+    readerStore.currentChapterIndex + 1,
+    { scene: 'quote' }
   )
 }
 
@@ -233,7 +267,7 @@ const searchQuery = ref('')
 function onSearch(data: { text: string }) {
   const query = data.text.trim()
   if (!query || query.length < 2) {
-    ElMessage.warning('搜索内容太短，至少需要 2 个字')
+    notify('搜索内容太短，至少需要 2 个字', 'warning')
     return
   }
 
@@ -309,6 +343,7 @@ async function onFileUploaded(event: Event) {
     // 保存至本地 Store 与 IndexedDB
     readerStore.setBook('demo', parsed.title, parsed.chapters)
     await saveBook('demo', rawText)
+    await recordsStore.initRecords('demo')
     
     // 初始化进度
     await saveProgress('demo', {
@@ -535,7 +570,8 @@ async function sendFollowUp() {
     chapterText,
     readerStore.book.id,
     companionStore.currentCompanionId,
-    readerStore.currentChapterIndex + 1
+    readerStore.currentChapterIndex + 1,
+    { scene: 'quote' }
   )
 }
 
@@ -561,15 +597,55 @@ watch(
   [() => readerStore.currentChapterIndex, () => readerStore.currentPageIndex],
   async ([newChapter, newPage]) => {
     if (readerStore.book) {
+      const now = Date.now()
+      const pageTurnInterval = now - lastPageTurnAt.value
+      lastPageTurnAt.value = now
+
       await saveProgress('demo', {
         chapter: newChapter,
         page: newPage,
         updatedAt: new Date().toISOString(),
       })
       scrollToPendingQuote()
+      maybeTriggerNightReminder(pageTurnInterval)
     }
   }
 )
+
+async function maybeTriggerNightReminder(pageTurnInterval: number) {
+  if (!readerStore.book || nightReminderInFlight.value || chatStore.isStreaming) return
+
+  const now = new Date()
+  const hour = now.getHours()
+  if (hour < 23 && hour >= 5) return
+
+  const dateKey = now.toISOString().slice(0, 10)
+  const storageKey = `coread_night_reminder_${readerStore.book.id}_${companionStore.currentCompanionId}_${dateKey}`
+  if (localStorage.getItem(storageKey) === '1') return
+
+  const hasReadLongEnough = readerStore.getDailyReadMinutes() >= 10
+  const hasSlowedDown = pageTurnInterval >= 45000
+  if (!hasReadLongEnough && !hasSlowedDown) return
+
+  nightReminderInFlight.value = true
+  localStorage.setItem(storageKey, '1')
+  showChatDrawer.value = true
+
+  try {
+    await chatStore.streamResponse(
+      '已经有些晚了，轻轻提醒我休息一下。',
+      '',
+      readerStore.currentPageContent || '',
+      readerStore.currentChapter?.content || '',
+      readerStore.book.id,
+      companionStore.currentCompanionId,
+      readerStore.currentChapterIndex + 1,
+      { scene: 'night' }
+    )
+  } finally {
+    nightReminderInFlight.value = false
+  }
+}
 
 // ── 监听角色切换并加载其专属会话 ──
 watch(
@@ -586,10 +662,11 @@ watch(
  */
 function handleCompanionSwitch(id: string) {
   if (chatStore.isStreaming) {
-    ElMessage.warning('角色正在回复中，请等待完成后再切换')
+    notify('角色正在回复中，请等待完成后再切换', 'warning')
     return
   }
   companionStore.setCompanion(id)
+  showCompanionMenu.value = false
 }
 
 // ── 视口改变与侧边栏折叠监听 ──
@@ -616,6 +693,8 @@ onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleResize)
     window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('click', closeFloatingMenus)
+    if (toastTimer) window.clearTimeout(toastTimer)
   }
 })
 
@@ -624,6 +703,7 @@ onMounted(async () => {
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleResize)
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('click', closeFloatingMenus)
     handleResize()
   }
   readerStore.resetReadingTimer()
@@ -647,8 +727,18 @@ onMounted(async () => {
 
 <template>
   <div class="h-screen overflow-hidden flex flex-col transition-colors duration-300 theme-bg-app">
+    <Transition name="fade-scale">
+      <div
+        v-if="toast"
+        class="fixed top-5 left-1/2 -translate-x-1/2 z-[80] rounded-full border theme-border bg-[var(--color-read-bg)]/90 backdrop-blur-md shadow-lg px-4 py-2 text-xs font-semibold"
+        :class="toast.tone === 'error' ? 'text-red-500' : toast.tone === 'warning' ? 'text-amber-600' : 'text-[var(--color-primary)]'"
+      >
+        {{ toast.text }}
+      </div>
+    </Transition>
+
     <!-- Header 头部栏 -->
-    <header class="border-b theme-border px-6 py-4 flex items-center justify-between bg-[var(--color-bg-app)] shrink-0 z-10">
+    <header class="border-b theme-border px-6 py-4 flex items-center justify-between bg-[var(--color-bg-app)] shrink-0 z-[70]">
       <div class="flex items-center gap-4">
         <h1 class="text-xl font-bold tracking-wide theme-text-app">AI 共读</h1>
         <div v-if="readerStore.book" class="text-sm theme-text-app opacity-70 font-sans">
@@ -658,50 +748,83 @@ onMounted(async () => {
 
       <!-- 顶部配置栏 -->
       <div class="flex items-center gap-4">
+        <div v-if="readerStore.book" class="relative" @click.stop>
+          <button
+            class="flex items-center gap-2 px-3 py-1.5 rounded-full border theme-header-btn bg-stone-500/5 hover:bg-stone-500/10 transition-colors cursor-pointer text-xs font-semibold"
+            @click="showBookTypeMenu = !showBookTypeMenu; showCompanionMenu = false"
+          >
+            <span class="theme-text-app opacity-65">类型</span>
+            <span class="theme-text-app">{{ currentBookTypeLabel }}</span>
+            <ArrowDown class="w-3 h-3 text-stone-400" />
+          </button>
+          <Transition name="fade-slide">
+            <div
+              v-if="showBookTypeMenu"
+              class="absolute right-0 top-full mt-2 w-52 rounded-xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-xl p-1.5 z-50"
+            >
+              <button
+                v-for="item in bookTypeOptions"
+                :key="item.value"
+                class="w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                :class="readerStore.bookType === item.value ? 'theme-bg-primary-light text-[var(--color-primary)]' : 'hover:bg-stone-500/10 theme-text-card'"
+                @click="selectBookType(item.value)"
+              >
+                <div class="text-xs font-bold">{{ item.label }}</div>
+                <div class="text-[10px] opacity-60 mt-0.5">{{ item.hint }}</div>
+              </button>
+            </div>
+          </Transition>
+        </div>
+
         <!-- 伴侣下拉选择器 -->
-        <el-dropdown trigger="click" @command="handleCompanionSwitch">
+        <div class="relative" @click.stop>
           <button 
             class="flex items-center gap-2 px-3 py-1.5 rounded-full border theme-header-btn bg-stone-500/5 hover:bg-stone-500/10 transition-colors cursor-pointer text-xs font-semibold"
             :disabled="chatStore.isStreaming"
             :class="{ 'opacity-50 cursor-not-allowed': chatStore.isStreaming }"
+            @click="showCompanionMenu = !showCompanionMenu; showBookTypeMenu = false"
           >
             <span 
               class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
               :style="{ background: `linear-gradient(135deg, ${companionStore.currentCompanion.accentStart}, ${companionStore.currentCompanion.accentEnd})` }"
             ></span>
             <span class="theme-text-app">{{ companionStore.currentCompanion.name }}</span>
-            <el-icon class="text-stone-400"><ArrowDown /></el-icon>
+            <ArrowDown class="w-3 h-3 text-stone-400" />
           </button>
-          
-          <template #dropdown>
-            <el-dropdown-menu class="!p-1.5 w-48">
-              <el-dropdown-item 
+
+          <Transition name="fade-slide">
+            <div
+              v-if="showCompanionMenu"
+              class="absolute right-0 top-full mt-2 w-56 rounded-xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-xl p-1.5 z-50"
+            >
+              <button 
                 v-for="c in companionStore.allCompanions" 
                 :key="c.id" 
-                :command="c.id"
-                :class="{ 'theme-bg-primary-light !text-[var(--color-primary)] font-bold': companionStore.currentCompanionId === c.id }"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer"
+                :class="companionStore.currentCompanionId === c.id ? 'theme-bg-primary-light text-[var(--color-primary)]' : 'hover:bg-stone-500/10 theme-text-card'"
+                @click="handleCompanionSwitch(c.id)"
               >
-                <div class="flex items-center gap-2 w-full">
-                  <span 
-                    class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
-                    :style="{ background: `linear-gradient(135deg, ${c.accentStart}, ${c.accentEnd})` }"
-                  ></span>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-xs truncate font-bold">{{ c.name }}</div>
-                    <div class="text-[9px] text-stone-400 truncate mt-0.5">{{ c.title }}</div>
-                  </div>
-                </div>
-              </el-dropdown-item>
+                <span 
+                  class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
+                  :style="{ background: `linear-gradient(135deg, ${c.accentStart}, ${c.accentEnd})` }"
+                ></span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-xs truncate font-bold">{{ c.name }}</span>
+                  <span class="block text-[9px] text-stone-400 truncate mt-0.5">{{ c.title }}</span>
+                </span>
+              </button>
               
-              <el-dropdown-item divided @click="router.push('/companions')">
-                <div class="flex items-center justify-center gap-1.5 w-full text-xs font-bold text-[var(--color-primary)] py-0.5">
-                  <el-icon><Setting /></el-icon>
-                  管理共读角色
-                </div>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+              <div class="my-1 h-px bg-stone-500/15"></div>
+              <button
+                class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-[var(--color-primary)] hover:bg-stone-500/10 transition-colors cursor-pointer"
+                @click="showCompanionMenu = false; router.push('/companions')"
+              >
+                <Setting class="w-3.5 h-3.5" />
+                管理共读角色
+              </button>
+            </div>
+          </Transition>
+        </div>
 
         <!-- 导入书籍按钮 -->
         <input
@@ -786,6 +909,33 @@ onMounted(async () => {
           <p class="text-sm text-[var(--color-read-text)] opacity-70 max-w-sm">
             导入一份 TXT 小说，与你选择的伴侣一起沉浸式共读，他会在阅读过程中为你提供温暖的对话与情绪价值。
           </p>
+          <div class="relative" @click.stop>
+            <button
+              class="flex items-center gap-2 px-3 py-2 rounded-full border theme-border bg-stone-500/5 hover:bg-stone-500/10 text-xs font-semibold transition-colors"
+              @click="showBookTypeMenu = !showBookTypeMenu"
+            >
+              <span class="text-[var(--color-read-text)] opacity-70">书籍类型</span>
+              <span class="text-[var(--color-read-text)]">{{ currentBookTypeLabel }}</span>
+              <ArrowDown class="w-3 h-3 text-stone-400" />
+            </button>
+            <Transition name="fade-slide">
+              <div
+                v-if="showBookTypeMenu"
+                class="absolute left-1/2 top-full mt-2 w-52 -translate-x-1/2 rounded-xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-xl p-1.5 z-50"
+              >
+                <button
+                  v-for="item in bookTypeOptions"
+                  :key="item.value"
+                  class="w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                  :class="readerStore.bookType === item.value ? 'theme-bg-primary-light text-[var(--color-primary)]' : 'hover:bg-stone-500/10 theme-text-card'"
+                  @click="selectBookType(item.value)"
+                >
+                  <div class="text-xs font-bold">{{ item.label }}</div>
+                  <div class="text-[10px] opacity-60 mt-0.5">{{ item.hint }}</div>
+                </button>
+              </div>
+            </Transition>
+          </div>
           <button
             @click="fileInput?.click()"
             class="px-6 py-2.5 rounded-full theme-bg-primary text-white text-sm font-semibold theme-bg-primary-hover shadow-md hover:scale-105 transition-all duration-300"
@@ -974,56 +1124,60 @@ onMounted(async () => {
     />
 
     <!-- 全文搜索结果弹窗 -->
-    <el-dialog
-      v-model="showSearchDialog"
-      :title="'全文搜索：' + searchQuery"
-      width="700px"
-      destroy-on-close
-      class="stats-dialog !rounded-2xl"
-    >
-      <template v-if="searchResults.length === 0">
-        <div class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
-          <svg class="w-10 h-10 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <div class="text-xs font-bold text-stone-500">未找到匹配结果</div>
-          <p class="text-[10px] opacity-70">尝试缩短搜索词或更换关键词。</p>
-        </div>
-      </template>
+    <Transition name="modal-fade">
+      <div v-if="showSearchDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" @click="showSearchDialog = false"></div>
+        <div class="relative w-full max-w-[700px] max-h-[82vh] rounded-2xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col">
+          <header class="px-5 py-4 border-b theme-border bg-stone-500/5 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-[var(--color-read-title)]">全文搜索</h3>
+              <p class="text-[10px] text-stone-400 mt-0.5">{{ searchQuery }}</p>
+            </div>
+            <button
+              class="w-7 h-7 rounded-full hover:bg-stone-500/10 text-stone-400 hover:text-stone-600 transition-colors"
+              @click="showSearchDialog = false"
+            >
+              <Close class="w-3.5 h-3.5 mx-auto" />
+            </button>
+          </header>
 
-      <div v-else class="max-h-[420px] overflow-y-auto space-y-2 pr-1">
-        <div class="text-[10px] text-stone-400 mb-2">共找到 {{ searchResults.length }} 处匹配</div>
-        <div
-          v-for="(r, i) in searchResults"
-          :key="i"
-          class="flex items-start gap-3 p-3 rounded-xl bg-stone-500/5 hover:bg-stone-500/10 border border-stone-200/60 transition-colors cursor-pointer group"
-          @click="handleSearchNavigate(r.chapterIndex, r.pageIndex)"
-        >
-          <!-- 章节页码标记 -->
-          <div class="shrink-0 flex flex-col items-center min-w-[44px]">
-            <span class="text-[10px] font-bold text-[var(--color-primary)]">{{ r.chapterTitle }}</span>
-            <span class="text-[9px] text-stone-400">第 {{ r.pageIndex + 1 }} 页</span>
+          <template v-if="searchResults.length === 0">
+            <div class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
+              <svg class="w-10 h-10 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <div class="text-xs font-bold text-stone-500">未找到匹配结果</div>
+              <p class="text-[10px] opacity-70">尝试缩短搜索词或更换关键词。</p>
+            </div>
+          </template>
+
+          <div v-else class="overflow-y-auto space-y-2 p-4">
+            <div class="text-[10px] text-stone-400 mb-2">共找到 {{ searchResults.length }} 处匹配</div>
+            <div
+              v-for="(r, i) in searchResults"
+              :key="i"
+              class="flex items-start gap-3 p-3 rounded-xl bg-stone-500/5 hover:bg-stone-500/10 border theme-border transition-colors cursor-pointer group"
+              @click="handleSearchNavigate(r.chapterIndex, r.pageIndex)"
+            >
+              <div class="shrink-0 flex flex-col items-center min-w-[44px]">
+                <span class="text-[10px] font-bold text-[var(--color-primary)]">{{ r.chapterTitle }}</span>
+                <span class="text-[9px] text-stone-400">第 {{ r.pageIndex + 1 }} 页</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs text-[var(--color-read-text)] leading-relaxed line-clamp-2">
+                  {{ r.context }}
+                </p>
+              </div>
+              <button
+                class="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium cursor-pointer transition-all border bg-[var(--color-primary)]/5 text-[var(--color-primary)] border-[var(--color-primary)]/15 opacity-0 group-hover:opacity-100 hover:bg-[var(--color-primary)]/10 active:scale-95"
+              >
+                <span>跳转</span>
+              </button>
+            </div>
           </div>
-
-          <!-- 上下文片段 -->
-          <div class="flex-1 min-w-0">
-            <p class="text-xs text-[var(--color-read-text)] leading-relaxed line-clamp-2">
-              {{ r.context }}
-            </p>
-          </div>
-
-          <!-- 跳转按钮 -->
-          <button
-            class="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium cursor-pointer transition-all border bg-[var(--color-primary)]/5 text-[var(--color-primary)] border-[var(--color-primary)]/15 opacity-0 group-hover:opacity-100 hover:bg-[var(--color-primary)]/10 active:scale-95"
-          >
-            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/><path d="M2 12h20"/>
-            </svg>
-            <span>跳转</span>
-          </button>
         </div>
       </div>
-    </el-dialog>
+    </Transition>
   </div>
 </template>
 
@@ -1045,6 +1199,24 @@ onMounted(async () => {
 .slide-right-enter-from,
 .slide-right-leave-to {
   transform: translateX(100%);
+  opacity: 0;
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active,
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
   opacity: 0;
 }
 </style>

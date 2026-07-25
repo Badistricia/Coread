@@ -3,15 +3,18 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useChatStore } from '@/stores/chatStore'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUiStore } from '@/stores/uiStore'
 import type { Companion } from '@/repositories/types'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
 const chatStore = useChatStore()
+const uiStore = useUiStore()
 
 const showEditDialog = ref(false)
 const isEditMode = ref(false)
+const toast = ref<{ text: string; tone: 'success' | 'warning' | 'error' | 'info' } | null>(null)
+let toastTimer: number | undefined
 
 const companionForm = ref<Companion>({
   id: '',
@@ -37,6 +40,14 @@ const colorPresets = [
   { name: '松针冷绿', start: '#a3b19b', end: '#556b2f' },
   { name: '迷雾灰紫', start: '#c0a9bd', end: '#7b68ee' },
 ]
+
+function notify(text: string, tone: 'success' | 'warning' | 'error' | 'info' = 'success') {
+  toast.value = { text, tone }
+  if (toastTimer) window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toast.value = null
+  }, 2200)
+}
 
 function selectPresetColor(start: string, end: string) {
   companionForm.value.accentStart = start
@@ -72,30 +83,30 @@ function openEditDialog(c: Companion) {
 async function handleSaveCompanion() {
   const c = companionForm.value
   if (!c.name.trim()) {
-    ElMessage.warning('请输入角色名字')
+    notify('请输入角色名字', 'warning')
     return
   }
   if (!c.title.trim()) {
-    ElMessage.warning('请输入简短身份')
+    notify('请输入简短身份', 'warning')
     return
   }
 
   try {
     await companionStore.addCustomCompanion(c)
-    ElMessage.success(isEditMode.value ? '编辑角色成功' : '新增角色成功')
+    notify(isEditMode.value ? '编辑角色成功' : '新增角色成功')
     showEditDialog.value = false
   } catch (err: any) {
-    ElMessage.error(err.message || '操作失败')
+    notify(err.message || '操作失败', 'error')
   }
 }
 
 function selectCompanion(id: string) {
   if (chatStore.isStreaming) {
-    ElMessage.warning('角色正在回复中，请等待完成后再切换')
+    notify('角色正在回复中，请等待完成后再切换', 'warning')
     return
   }
   companionStore.setCompanion(id)
-  ElMessage.success('已选用该阅读伴侣')
+  notify('已选用该阅读伴侣')
 }
 
 // 复制模板克隆人设
@@ -108,26 +119,24 @@ function copyTemplate(template: Companion) {
     isCustom: true,
   }
   showEditDialog.value = true
-  ElMessage.info('已载入模板，您可以继续自定义调整')
+  notify('已载入模板，您可以继续自定义调整', 'info')
 }
 
 // 更多操作下拉处理
-function handleCommand(cmd: string, c: Companion) {
+async function handleCommand(cmd: string, c: Companion) {
   if (cmd === 'edit') {
     openEditDialog(c)
   } else if (cmd === 'delete') {
-    ElMessageBox.confirm(
-      `确定删除自定义角色“${c.name}”吗？此操作不可恢复。`,
-      '警告',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    ).then(async () => {
+    const ok = await uiStore.confirm({
+      title: '删除自定义角色',
+      message: `确定删除自定义角色“${c.name}”吗？此操作不可恢复。`,
+      confirmText: '删除',
+      danger: true,
+    })
+    if (ok) {
       await companionStore.deleteCustomCompanion(c.id)
-      ElMessage.success('删除角色成功')
-    }).catch(() => {})
+      notify('删除角色成功')
+    }
   }
 }
 
@@ -142,18 +151,29 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('click', closeAllDropdowns)
+  if (toastTimer) window.clearTimeout(toastTimer)
 })
 </script>
 
 <template>
   <div class="min-h-screen bg-[var(--color-read-bg)] text-[var(--color-read-text)] flex flex-col font-sans transition-colors duration-300">
+    <Transition name="modal-fade">
+      <div
+        v-if="toast"
+        class="fixed top-5 left-1/2 -translate-x-1/2 z-[80] rounded-full border theme-border bg-[var(--color-read-bg)]/90 backdrop-blur-md shadow-lg px-4 py-2 text-xs font-semibold"
+        :class="toast.tone === 'error' ? 'text-red-500' : toast.tone === 'warning' ? 'text-amber-600' : 'text-[var(--color-primary)]'"
+      >
+        {{ toast.text }}
+      </div>
+    </Transition>
+
     <!-- 头部导航 -->
     <header class="px-6 py-4 border-b theme-border flex items-center gap-4 shrink-0 bg-stone-500/5 select-none">
       <button 
         @click="router.back()" 
         class="w-7 h-7 rounded-full border theme-border flex items-center justify-center hover:bg-stone-500/10 active:scale-95 transition-all text-stone-500 hover:text-stone-700 cursor-pointer bg-transparent"
       >
-        <el-icon class="!text-xs"><ArrowLeft /></el-icon>
+        <ArrowLeft class="w-3.5 h-3.5" />
       </button>
       <h1 class="text-base font-bold text-[var(--color-read-title)]">共读角色人设库</h1>
       <span class="text-xs opacity-50">在这里编辑您专属的 AI 伴侣人设，支持最多 5 个自定义角色</span>
@@ -235,7 +255,7 @@ onUnmounted(() => {
                   @click.stop="activeDropdownId = activeDropdownId === c.id ? null : c.id"
                   class="text-stone-400 hover:text-stone-700 transition-colors p-1 rounded hover:bg-stone-500/10 cursor-pointer bg-transparent border-none"
                 >
-                  <el-icon class="!text-xs"><MoreFilled /></el-icon>
+                  <MoreFilled class="w-3.5 h-3.5" />
                 </button>
                 
                 <Transition name="fade-slide">
@@ -249,14 +269,14 @@ onUnmounted(() => {
                         @click="handleCommand('edit', c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-read-text)] hover:bg-stone-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
-                        <el-icon class="text-stone-400"><Edit /></el-icon>
+                        <Edit class="w-3.5 h-3.5 text-stone-400" />
                         <span>编辑人设</span>
                       </button>
                       <button 
                         @click="handleCommand('delete', c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-red-500 font-semibold hover:bg-red-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
-                        <el-icon><Delete /></el-icon>
+                        <Delete class="w-3.5 h-3.5" />
                         <span>删除角色</span>
                       </button>
                     </template>
@@ -265,7 +285,7 @@ onUnmounted(() => {
                         @click="copyTemplate(c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
-                        <el-icon><CopyDocument /></el-icon>
+                        <CopyDocument class="w-3.5 h-3.5" />
                         <span>克隆为人设模板</span>
                       </button>
                     </template>
@@ -282,7 +302,7 @@ onUnmounted(() => {
           @click="openAddDialog"
           class="w-full max-w-[260px] min-h-[220px] border-2 border-dashed theme-border rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer hover:bg-stone-500/5 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all duration-300 text-stone-400"
         >
-          <el-icon class="text-2xl"><Plus /></el-icon>
+          <Plus class="w-6 h-6" />
           <div class="text-xs font-bold">新建自定义角色</div>
           <p class="text-[9px] opacity-60 text-center px-4">设计你独特的共读人设，最多可拥有 5 个</p>
         </div>
@@ -299,26 +319,28 @@ onUnmounted(() => {
         <Transition name="modal-scale">
           <div 
             v-if="showEditDialog"
-            class="relative w-full max-w-[820px] bg-[var(--color-read-bg)] border theme-border rounded-[28px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 transition-all duration-300"
-            style="box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);"
+            class="relative w-full max-w-[920px] bg-[var(--color-read-bg)] border theme-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 transition-all duration-300"
           >
             <!-- 头部 -->
             <header class="px-6 py-5 border-b theme-border flex items-center justify-between bg-stone-500/5">
-              <h2 class="text-base font-bold text-[var(--color-read-title)]">
-                {{ isEditMode ? '编辑伴侣人设' : '新建自定义伴侣' }}
-              </h2>
+              <div>
+                <h2 class="text-base font-bold text-[var(--color-read-title)]">
+                  {{ isEditMode ? '编辑伴侣人设' : '新建自定义伴侣' }}
+                </h2>
+                <p class="text-[10px] text-stone-400 mt-1">把角色写成一张可共读的人格卡，而不是一段失控的长 Prompt。</p>
+              </div>
               <button 
                 @click="showEditDialog = false"
                 class="w-7 h-7 rounded-full flex items-center justify-center hover:bg-stone-500/10 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer bg-transparent border-none"
               >
-                <el-icon><Close /></el-icon>
+                <Close class="w-4 h-4" />
               </button>
             </header>
             
             <!-- 内容区 -->
             <div class="flex-1 overflow-y-auto p-6 flex gap-6 items-start">
               <!-- 左侧：所见即所得实时卡片渲染预览 -->
-              <div class="w-64 border theme-border rounded-2xl bg-stone-500/5 p-4 flex flex-col items-center justify-between shadow-inner shrink-0 relative overflow-hidden">
+              <div class="w-72 border theme-border rounded-2xl bg-stone-500/5 p-4 flex flex-col items-center justify-between shadow-inner shrink-0 relative overflow-hidden">
                 <div 
                   class="absolute top-0 left-0 right-0 h-12 opacity-20"
                   :style="{ background: `linear-gradient(135deg, ${companionForm.accentStart}, ${companionForm.accentEnd})` }"
@@ -357,7 +379,12 @@ onUnmounted(() => {
               </div>
 
               <!-- 右侧：详细配置表单 (完全定制) -->
-              <form @submit.prevent class="flex-1 space-y-4 max-h-[460px] overflow-y-auto pr-2 custom-form select-none">
+              <form @submit.prevent class="flex-1 space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-form select-none">
+                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 space-y-4">
+                  <div>
+                    <h3 class="text-xs font-bold text-[var(--color-read-title)]">基础身份</h3>
+                    <p class="text-[10px] text-stone-400 mt-0.5">名字、身份和用户称呼会最直接影响角色稳定性。</p>
+                  </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div class="flex flex-col gap-1">
                     <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">角色名字 <span class="text-red-500">*</span></label>
@@ -408,13 +435,17 @@ onUnmounted(() => {
                     class="custom-textarea text-xs"
                   ></textarea>
                 </div>
+                </section>
 
-                <hr class="theme-border opacity-30 my-2" />
-                <div class="text-[10px] font-bold text-[var(--color-primary)]">AI 说话语气与共读风格微调 Prompt</div>
+                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 space-y-4">
+                <div>
+                  <h3 class="text-xs font-bold text-[var(--color-read-title)]">共读人格</h3>
+                  <p class="text-[10px] text-stone-400 mt-0.5">控制他说话的声音、读书时关注什么，以及深夜怎样提醒。</p>
+                </div>
 
                 <div class="grid grid-cols-3 gap-3">
                   <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">语气说明说明</label>
+                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">说话语气</label>
                     <textarea 
                       v-model="companionForm.tone" 
                       :rows="2" 
@@ -441,11 +472,10 @@ onUnmounted(() => {
                     ></textarea>
                   </div>
                 </div>
-
-                <hr class="theme-border opacity-30 my-2" />
+                </section>
 
                 <!-- 色卡选取与微调 -->
-                <div class="flex flex-col gap-1">
+                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 flex flex-col gap-2">
                   <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">人设卡片主题色 (双色莫兰迪渐变)</label>
                   <div class="flex flex-col gap-2.5 w-full">
                     <!-- 快捷莫兰迪色色卡 -->
@@ -493,7 +523,7 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </div>
-                </div>
+                </section>
               </form>
             </div>
             

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useCompanionStore } from '@/stores/companionStore'
-import { ElMessageBox } from 'element-plus'
+import { useUiStore } from '@/stores/uiStore'
 
 interface Session {
   id: string
@@ -22,6 +22,8 @@ const emit = defineEmits<{
 }>()
 
 const companionStore = useCompanionStore()
+const uiStore = useUiStore()
+const showMenu = ref(false)
 
 const currentSession = computed(() => {
   return props.sessions.find(s => s.id === props.currentSessionId) || props.sessions[0]
@@ -33,33 +35,44 @@ function handleCreate() {
 }
 
 // ── 重命名会话 ──
-function handleRename() {
+async function handleRename() {
   if (!currentSession.value) return
-  ElMessageBox.prompt('请输入会话新名称', '重命名会话', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+  const value = await uiStore.prompt({
+    title: '重命名会话',
+    message: '给这段共读对话换一个更好认的名字。',
     inputValue: currentSession.value.name,
-    inputPattern: /\S+/,
-    inputErrorMessage: '会话名不能为空'
-  }).then(({ value }) => {
+    inputPlaceholder: '会话名称',
+    confirmText: '保存',
+  })
+  if (value?.trim()) {
     emit('rename', value.trim())
-  }).catch(() => {})
+  }
 }
 
 // ── 清空会话内容 ──
-function handleClear() {
+async function handleClear() {
   if (!currentSession.value) return
-  ElMessageBox.confirm(
-    '确认清空当前会话的所有对话历史吗？此操作不可撤销。',
-    '提示',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
+  const ok = await uiStore.confirm({
+    title: '清空当前会话',
+    message: '确认清空当前会话的所有对话历史吗？此操作不可撤销。',
+    confirmText: '清空',
+    danger: true,
+  })
+  if (ok) {
     emit('clear', currentSession.value.id)
-  }).catch(() => {})
+  }
+}
+
+function selectSession(id: string) {
+  emit('select', id)
+  showMenu.value = false
+}
+
+function runMenuAction(action: 'create' | 'rename' | 'clear') {
+  showMenu.value = false
+  if (action === 'create') handleCreate()
+  if (action === 'rename') handleRename()
+  if (action === 'clear') handleClear()
 }
 </script>
 
@@ -80,27 +93,29 @@ function handleClear() {
     </div>
 
     <!-- 会话管理下拉选单 -->
-    <el-dropdown trigger="click" @command="(cmd: string) => {
-      if (cmd === 'create') handleCreate()
-      else if (cmd === 'rename') handleRename()
-      else if (cmd === 'clear') handleClear()
-      else emit('select', cmd)
-    }">
-      <button class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border theme-border bg-stone-500/5 hover:bg-stone-500/10 transition-all text-xs font-medium cursor-pointer max-w-[150px] shrink-0">
+    <div class="relative" @click.stop>
+      <button
+        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border theme-border bg-stone-500/5 hover:bg-stone-500/10 transition-all text-xs font-medium cursor-pointer max-w-[150px] shrink-0"
+        @click="showMenu = !showMenu"
+      >
         <span class="theme-text-app truncate">{{ currentSession?.name || '默认会话' }}</span>
-        <el-icon class="text-stone-400 shrink-0"><ArrowDown /></el-icon>
+        <ArrowDown class="w-3 h-3 text-stone-400 shrink-0" />
       </button>
-      
-      <template #dropdown>
-        <el-dropdown-menu class="!p-1.5 w-56">
+
+      <Transition name="fade-slide">
+        <div
+          v-if="showMenu"
+          class="absolute right-0 top-full mt-2 w-56 rounded-xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-xl p-1.5 z-50"
+        >
           <div class="text-[10px] font-bold text-stone-400 px-2 py-1 select-none">最近会话</div>
           
           <!-- 会话列表 -->
-          <el-dropdown-item 
+          <button 
             v-for="s in sessions" 
             :key="s.id" 
-            :command="s.id"
-            :class="{ 'theme-bg-primary-light !text-[var(--color-primary)] font-semibold': s.id === currentSessionId }"
+            class="w-full px-2.5 py-2 rounded-lg text-left transition-colors"
+            :class="s.id === currentSessionId ? 'theme-bg-primary-light text-[var(--color-primary)] font-semibold' : 'hover:bg-stone-500/10 theme-text-card'"
+            @click="selectSession(s.id)"
           >
             <div class="flex items-center justify-between w-full text-xs">
               <span class="truncate pr-4" :title="s.name">{{ s.name }}</span>
@@ -108,31 +123,47 @@ function handleClear() {
                 {{ s.messages.filter(m => !m.isStreaming).length }} 聊
               </span>
             </div>
-          </el-dropdown-item>
+          </button>
           
           <!-- 操控功能项 -->
-          <el-dropdown-item divided command="create">
-            <div class="flex items-center gap-1.5 text-xs text-[var(--color-primary)] font-medium py-0.5">
-              <el-icon><Plus /></el-icon>
-              <span>新建会话</span>
-            </div>
-          </el-dropdown-item>
+          <div class="my-1 h-px bg-stone-500/15"></div>
+          <button
+            class="w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs text-[var(--color-primary)] font-medium hover:bg-stone-500/10"
+            @click="runMenuAction('create')"
+          >
+            <Plus class="w-3.5 h-3.5" />
+            <span>新建会话</span>
+          </button>
           
-          <el-dropdown-item command="rename">
-            <div class="flex items-center gap-1.5 text-xs text-stone-600 font-medium py-0.5">
-              <el-icon><Edit /></el-icon>
-              <span>重命名会话</span>
-            </div>
-          </el-dropdown-item>
+          <button
+            class="w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs text-stone-600 font-medium hover:bg-stone-500/10"
+            @click="runMenuAction('rename')"
+          >
+            <Edit class="w-3.5 h-3.5" />
+            <span>重命名会话</span>
+          </button>
           
-          <el-dropdown-item command="clear" class="!text-red-500 hover:!bg-red-50">
-            <div class="flex items-center gap-1.5 text-xs font-medium py-0.5">
-              <el-icon><Delete /></el-icon>
-              <span>清空当前会话</span>
-            </div>
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+          <button
+            class="w-full flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs text-red-500 font-medium hover:bg-red-500/10"
+            @click="runMenuAction('clear')"
+          >
+            <Delete class="w-3.5 h-3.5" />
+            <span>清空当前会话</span>
+          </button>
+        </div>
+      </Transition>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+</style>

@@ -19,6 +19,37 @@
 // 角色 / Companion
 // ═══════════════════════════════════════════
 
+export interface CompanionProfile {
+  basic?: {
+    identity?: string // 结构化身份背景，比 description 更适合作为 Prompt 输入
+    species?: string
+  }
+  relationship?: {
+    callToUser?: string
+    style?: string
+    boundary?: string
+  }
+  voice?: {
+    tone?: string
+    sentenceStyle?: string
+    forbiddenPhrases?: string
+    emojiStyle?: string
+  }
+  reading?: {
+    style?: string
+    discussionDepth?: string
+  }
+  behavior?: {
+    idleChatStyle?: string
+    comfortStyle?: string
+    questionStyle?: string
+    nightReminderStyle?: string
+  }
+  prompt?: {
+    personaNotes?: string
+  }
+}
+
 export interface Companion {
   id: string // 主键。内置角色无前缀，自定义角色以 'custom_' 开头
   name: string // 角色名，如 "陆沉"
@@ -35,6 +66,12 @@ export interface Companion {
   readingStyle?: string // 读书批注风格
   midnightStyle?: string // 深夜问候风格
   callToUser?: string // 如何称呼用户，如 "兔子"、"未婚妻"
+  basic?: CompanionProfile['basic']
+  relationship?: CompanionProfile['relationship']
+  voice?: CompanionProfile['voice']
+  reading?: CompanionProfile['reading']
+  behavior?: CompanionProfile['behavior']
+  prompt?: CompanionProfile['prompt']
 }
 
 // ═══════════════════════════════════════════

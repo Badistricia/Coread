@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useUiStore } from '@/stores/uiStore'
 
 const props = defineProps<{
   type: 'bookmark' | 'highlight' | 'note' | 'aifragment'
@@ -18,9 +19,22 @@ const emit = defineEmits<{
 }>()
 
 const isExpanded = ref(false)
+const uiStore = useUiStore()
 
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
+}
+
+async function confirmDelete() {
+  const ok = await uiStore.confirm({
+    title: '删除记录',
+    message: '确认删除该记录吗？删除后无法恢复。',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (ok) {
+    emit('delete')
+  }
 }
 </script>
 
@@ -33,10 +47,10 @@ function toggleExpand() {
       <div class="flex items-center justify-between text-[10px] text-stone-400">
         <div class="flex items-center gap-1.5 font-bold text-[var(--color-primary)]">
           <!-- 动态呈现类型小图标 -->
-          <el-icon v-if="type === 'bookmark'"><Bookmark /></el-icon>
-          <el-icon v-else-if="type === 'highlight'"><EditPen /></el-icon>
-          <el-icon v-else-if="type === 'note'"><Document /></el-icon>
-          <el-icon v-else-if="type === 'aifragment'"><ChatLineRound /></el-icon>
+          <Bookmark v-if="type === 'bookmark'" class="w-3.5 h-3.5" />
+          <EditPen v-else-if="type === 'highlight'" class="w-3.5 h-3.5" />
+          <Document v-else-if="type === 'note'" class="w-3.5 h-3.5" />
+          <ChatLineRound v-else-if="type === 'aifragment'" class="w-3.5 h-3.5" />
           
           <span>{{ title }}</span>
           <span v-if="subtitle" class="opacity-60 font-normal">· {{ subtitle }}</span>
@@ -101,24 +115,13 @@ function toggleExpand() {
         <span>定位</span>
       </button>
       
-      <el-popconfirm
-        title="确认删除该记录吗？"
-        confirm-button-text="确定"
-        cancel-button-text="取消"
-        @confirm="emit('delete')"
+      <button
+        @click="confirmDelete"
+        class="w-7 h-7 rounded-full border border-red-500/20 bg-red-500/5 text-red-500 flex items-center justify-center hover:bg-red-500/10 active:scale-95 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100"
+        title="删除记录"
       >
-        <template #reference>
-          <el-button
-            size="small"
-            type="danger"
-            plain
-            icon="Delete"
-            circle
-            class="transition-opacity duration-200 lg:opacity-0 lg:group-hover:opacity-100"
-            title="删除记录"
-          />
-        </template>
-      </el-popconfirm>
+        <Delete class="w-3.5 h-3.5" />
+      </button>
     </div>
   </div>
 </template>

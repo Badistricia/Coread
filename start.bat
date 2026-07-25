@@ -1,4 +1,7 @@
-@echo off
+﻿@echo off
+chcp 65001 > nul
+set PYTHONIOENCODING=UTF-8
+set PYTHONUTF8=1
 echo ==========================================
 echo Starting AI Co-Read system via PowerShell...
 echo ==========================================

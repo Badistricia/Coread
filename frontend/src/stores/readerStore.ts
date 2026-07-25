@@ -3,6 +3,8 @@ import { ref, computed, markRaw, watch } from 'vue'
 import type { Ref } from 'vue'
 import { type Chapter, paginateText } from '@/utils/reader'
 
+export type BookType = 'default' | 'literature' | 'romance'
+
 export interface BookMeta {
   id: string
   title: string
@@ -28,6 +30,9 @@ export const useReaderStore = defineStore('reader', () => {
   const lineHeight: Ref<number> = ref(
     Number(localStorage.getItem('coread_line_height')) || 1.6
   )
+  const bookType: Ref<BookType> = ref(
+    (localStorage.getItem('coread_book_type') as BookType) || 'default'
+  )
 
   // ── 跳转历史与进度切回 ──
   const latestReadProgress: Ref<{ chapterIndex: number; pageIndex: number } | null> = ref(null)
@@ -41,8 +46,12 @@ export const useReaderStore = defineStore('reader', () => {
   const readingStartTime: Ref<number> = ref(Date.now())
 
   const dailyReadMinutes = computed<number>(() => {
-    return Math.floor((Date.now() - readingStartTime.value) / 60000)
+    return getDailyReadMinutes()
   })
+
+  function getDailyReadMinutes() {
+    return Math.floor((Date.now() - readingStartTime.value) / 60000)
+  }
 
   const currentChapter = computed<Chapter | null>(() => {
     if (chapters.value.length === 0 || currentChapterIndex.value < 0 || currentChapterIndex.value >= chapters.value.length) {
@@ -200,6 +209,11 @@ export const useReaderStore = defineStore('reader', () => {
     localStorage.setItem('coread_line_height', String(val))
   }
 
+  function setBookType(type: BookType) {
+    bookType.value = type
+    localStorage.setItem('coread_book_type', type)
+  }
+
   const pendingScrollQuote = ref('')
 
   function recordCurrentProgress() {
@@ -231,12 +245,14 @@ export const useReaderStore = defineStore('reader', () => {
     themeStyle,
     isDoublePage,
     lineHeight,
+    bookType,
     latestReadProgress,
     pendingScrollQuote,
     viewportWidth,
     viewportHeight,
     isChatOpen,
     dailyReadMinutes,
+    getDailyReadMinutes,
     setBook,
     goToPage,
     nextPage,
@@ -247,6 +263,7 @@ export const useReaderStore = defineStore('reader', () => {
     resetReadingTimer,
     setDoublePage,
     setLineHeight,
+    setBookType,
     recordCurrentProgress,
     restoreLatestProgress,
   }

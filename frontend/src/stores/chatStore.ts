@@ -5,6 +5,7 @@ import { saveChatSessions, loadChatSessions } from '@/utils/storage'
 import { useReaderStore } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
+import type { BookType } from '@/stores/readerStore'
 
 export interface ChatMessage {
   role: 'user' | 'ai'
@@ -21,6 +22,22 @@ export interface ChatSession {
   name: string
   messages: ChatMessage[]
   createdAt: string
+}
+
+export type ChatScene =
+  | 'general'
+  | 'quote'
+  | 'quick_explain'
+  | 'quick_feeling'
+  | 'continue'
+  | 'playful_ping'
+  | 'companion_idle'
+  | 'night'
+
+export interface StreamResponseOptions {
+  scene?: ChatScene
+  bookType?: BookType
+  managerPrompt?: string
 }
 
 function cleanForPrompt(content: string) {
@@ -156,7 +173,8 @@ export const useChatStore = defineStore('chat', () => {
     chapterText: string,
     _bookId: string,
     companionId: string,
-    currentChapter: number
+    currentChapter: number,
+    options: StreamResponseOptions = {}
   ) {
     if (isStreaming.value || !currentSession.value) return
 
@@ -216,12 +234,15 @@ export const useChatStore = defineStore('chat', () => {
           context_text: contextText,
           chapter_text: chapterText,
           current_local_time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-          daily_read_minutes: readerStore.dailyReadMinutes,
+          daily_read_minutes: readerStore.getDailyReadMinutes(),
           current_chapter: currentChapter,
           companion_id: companionId,
           history: historyPayload,
           quote: quoteText, // 传递独立的引用原文
-          custom_companion: companionStore.currentCompanion.isCustom ? companionStore.currentCompanion : undefined
+          custom_companion: companionStore.currentCompanion.isCustom ? companionStore.currentCompanion : undefined,
+          scene: options.scene || (quoteText ? 'quote' : 'general'),
+          book_type: options.bookType || readerStore.bookType,
+          manager_prompt: options.managerPrompt,
         }),
         signal: abortController.signal,
       })

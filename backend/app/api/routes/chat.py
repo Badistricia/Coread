@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """聊天路由 — POST /api/chat
 
 接收前端 ChatRequest，组装 Prompt，流式返回 LLM 回复。
@@ -38,6 +39,9 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
     quote: str = ""  # 用户选中的划线原文
     custom_companion: Optional[dict] = None
+    scene: str = ""
+    book_type: str = "default"
+    manager_prompt: Optional[str] = None
 
 
 @router.post("/chat")
@@ -52,6 +56,9 @@ async def chat(req: ChatRequest):
         chapter_summaries="",
         quote=req.quote,
         custom_companion=req.custom_companion,
+        scene=req.scene,
+        book_type=req.book_type,
+        manager_prompt=req.manager_prompt,
     )
     user = get_user_message(
         companion_id=req.companion_id,
@@ -59,11 +66,13 @@ async def chat(req: ChatRequest):
         chapter_text=req.chapter_text,
         message=req.message,
         quote=req.quote,
+        scene=req.scene,
+        book_type=req.book_type,
     )
 
     return StreamingResponse(
         stream_chat(system, user, history=req.history),
-        media_type="text/event-stream",
+        media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useReaderStore } from '@/stores/readerStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
@@ -18,6 +19,14 @@ const readerStore = useReaderStore()
 const chatStore = useChatStore()
 const recordsStore = useReadingRecordsStore()
 const companionStore = useCompanionStore()
+const activeTab = ref<'bookmarks' | 'highlights' | 'notes' | 'fragments'>('bookmarks')
+
+const tabs = [
+  { id: 'bookmarks', label: '我的书签' },
+  { id: 'highlights', label: '高亮划线' },
+  { id: 'notes', label: '随感笔记' },
+  { id: 'fragments', label: 'AI 研讨片段' },
+] as const
 
 // ── 内部跳转定位 ──
 function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string, quote?: string) {
@@ -26,7 +35,7 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
     readerStore.pendingScrollQuote = quote
   }
   readerStore.currentChapterIndex = chapterIdx
-  readerStore.currentPageIndex = pageIdx
+  readerStore.currentPageIndex = Math.max(0, Math.min(pageIdx, readerStore.totalPages - 1))
   
   if (sessionId) {
     chatStore.currentSessionId = sessionId
@@ -37,24 +46,47 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
 </script>
 
 <template>
-  <el-dialog
-    :model-value="modelValue"
-    @update:model-value="(val: boolean) => emit('update:modelValue', val)"
-    title="共读记录与统计看板"
-    width="800px"
-    destroy-on-close
-    class="stats-dialog !rounded-2xl"
-  >
-    <el-tabs type="border-card" class="rounded-xl overflow-hidden border theme-border stats-tabs-card">
+  <Transition name="modal-fade">
+    <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" @click="emit('update:modelValue', false)"></div>
+      <div class="relative w-full max-w-[800px] max-h-[86vh] rounded-2xl border theme-border bg-[var(--color-read-bg)]/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col">
+        <header class="px-5 py-4 border-b theme-border bg-stone-500/5 flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-[var(--color-read-title)]">共读记录与统计看板</h3>
+            <p class="text-[10px] text-stone-400 mt-0.5">书签、划线、笔记和 AI 研讨片段</p>
+          </div>
+          <button
+            class="w-7 h-7 rounded-full hover:bg-stone-500/10 text-stone-400 hover:text-stone-600 transition-colors"
+            @click="emit('update:modelValue', false)"
+          >
+            <Close class="w-3.5 h-3.5 mx-auto" />
+          </button>
+        </header>
+
+        <div class="px-4 pt-4">
+          <div class="grid grid-cols-4 gap-1 rounded-xl border theme-border bg-stone-500/5 p-1">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              class="px-3 py-2 rounded-lg text-xs font-bold transition-colors"
+              :class="activeTab === tab.id ? 'theme-bg-primary text-white shadow-sm' : 'theme-text-card hover:bg-stone-500/10'"
+              @click="activeTab = tab.id"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 min-h-0 overflow-y-auto p-4">
       <!-- 1. 书签看板 -->
-      <el-tab-pane label="我的书签">
+      <section v-if="activeTab === 'bookmarks'">
         <!-- 统一的精致空白提示 -->
         <div v-if="recordsStore.bookmarks.length === 0" class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
-          <el-icon class="text-3xl opacity-50"><Bookmark /></el-icon>
+          <Bookmark class="w-8 h-8 opacity-50" />
           <div class="text-xs font-bold text-stone-500">暂无书签</div>
           <p class="text-[10px] opacity-70">在正文右上角悬浮向下拽动，即可拉下书签绸带。</p>
         </div>
-        <div v-else class="max-h-[380px] overflow-y-auto space-y-3 pr-1">
+        <div v-else class="space-y-3 pr-1">
           <ReadingRecordItem
             v-for="b in recordsStore.bookmarks"
             :key="b.id"
@@ -67,16 +99,16 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
             @delete="recordsStore.removeBookmark(b.id)"
           />
         </div>
-      </el-tab-pane>
+      </section>
 
       <!-- 2. 高亮看板 -->
-      <el-tab-pane label="高亮划线">
+      <section v-if="activeTab === 'highlights'">
         <div v-if="recordsStore.highlights.length === 0" class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
-          <el-icon class="text-3xl opacity-50"><EditPen /></el-icon>
+          <EditPen class="w-8 h-8 opacity-50" />
           <div class="text-xs font-bold text-stone-500">暂无高亮</div>
           <p class="text-[10px] opacity-70">在正文划线选区中直接点击“引用”即可快速高亮。</p>
         </div>
-        <div v-else class="max-h-[380px] overflow-y-auto space-y-3 pr-1">
+        <div v-else class="space-y-3 pr-1">
           <ReadingRecordItem
             v-for="h in recordsStore.highlights"
             :key="h.id"
@@ -88,16 +120,16 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
             @delete="recordsStore.removeHighlight(h.id)"
           />
         </div>
-      </el-tab-pane>
+      </section>
 
       <!-- 3. 随笔笔记看板 -->
-      <el-tab-pane label="随感笔记">
+      <section v-if="activeTab === 'notes'">
         <div v-if="recordsStore.notes.length === 0" class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
-          <el-icon class="text-3xl opacity-50"><Document /></el-icon>
+          <Document class="w-8 h-8 opacity-50" />
           <div class="text-xs font-bold text-stone-500">暂无随感笔记</div>
           <p class="text-[10px] opacity-70">在划线提问时输入你的想法并发送，将同步保存为笔记。</p>
         </div>
-        <div v-else class="max-h-[380px] overflow-y-auto space-y-3 pr-1">
+        <div v-else class="space-y-3 pr-1">
           <ReadingRecordItem
             v-for="n in recordsStore.notes"
             :key="n.id"
@@ -110,16 +142,16 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
             @delete="recordsStore.removeNote(n.id)"
           />
         </div>
-      </el-tab-pane>
+      </section>
 
       <!-- 4. AI 对话片段看板 -->
-      <el-tab-pane label="AI 研讨片段">
+      <section v-if="activeTab === 'fragments'">
         <div v-if="recordsStore.aiFragments.length === 0" class="flex flex-col items-center justify-center py-16 text-stone-400 gap-2.5 select-none">
-          <el-icon class="text-3xl opacity-50"><ChatLineRound /></el-icon>
+          <ChatLineRound class="w-8 h-8 opacity-50" />
           <div class="text-xs font-bold text-stone-500">暂无研讨片段</div>
           <p class="text-[10px] opacity-70">在正文划线向角色提问，成功获取答复后自动录入片段。</p>
         </div>
-        <div v-else class="max-h-[380px] overflow-y-auto space-y-3 pr-1">
+        <div v-else class="space-y-3 pr-1">
           <ReadingRecordItem
             v-for="f in recordsStore.aiFragments"
             :key="f.id"
@@ -134,14 +166,20 @@ function handleNavigate(chapterIdx: number, pageIdx: number, sessionId?: string,
             @delete="recordsStore.removeAiFragment(f.id)"
           />
         </div>
-      </el-tab-pane>
-    </el-tabs>
-  </el-dialog>
+      </section>
+        </div>
+      </div>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
-.stats-tabs-card {
-  --el-tabs-header-bg-color: transparent !important;
-  background: transparent !important;
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
 }
 </style>

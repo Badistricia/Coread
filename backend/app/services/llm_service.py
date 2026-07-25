@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """LLM 流式调用服务 — 封装 OpenAI 兼容 API 的 SSE 生成器。"""
 
 import httpx

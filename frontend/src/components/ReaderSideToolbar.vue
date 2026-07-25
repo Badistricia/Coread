@@ -42,29 +42,25 @@ function cycleLineHeight() {
     <!-- 【第一段：核心导航】 -->
     <div class="flex flex-col gap-2.5 items-center">
       <!-- 目录圆钮 -->
-      <el-tooltip content="查看目录" placement="left">
-        <button
-          @click="emit('toggleDirectory')"
-          title="目录"
-          aria-label="查看章节目录"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          <el-icon class="!text-lg text-stone-600"><Fold /></el-icon>
-        </button>
-      </el-tooltip>
+      <button
+        @click="emit('toggleDirectory')"
+        title="查看目录"
+        aria-label="查看章节目录"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <Fold class="w-4.5 h-4.5 text-stone-600" />
+      </button>
       
       <!-- 聊天抽屉折叠圆钮 -->
-      <el-tooltip :content="showChatDrawer ? '收起聊天栏' : '展开聊天栏'" placement="left">
-        <button
-          @click="emit('update:showChatDrawer', !showChatDrawer)"
-          title="AI共读"
-          aria-label="展开或收起AI伴侣侧栏"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-          :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showChatDrawer }"
-        >
-          <el-icon class="!text-lg"><ChatDotRound /></el-icon>
-        </button>
-      </el-tooltip>
+      <button
+        @click="emit('update:showChatDrawer', !showChatDrawer)"
+        :title="showChatDrawer ? '收起聊天栏' : '展开聊天栏'"
+        aria-label="展开或收起AI伴侣侧栏"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+        :class="{ 'theme-bg-primary-light text-[var(--color-primary)]': showChatDrawer }"
+      >
+        <ChatDotRound class="w-4.5 h-4.5" />
+      </button>
     </div>
 
     <hr class="theme-border opacity-50 w-6 mx-auto" />
@@ -72,28 +68,24 @@ function cycleLineHeight() {
     <!-- 【第二段：功能工具】 -->
     <div class="flex flex-col gap-2.5 items-center">
       <!-- 统计弹窗按钮 -->
-      <el-tooltip content="查看统计与书签笔记" placement="left">
-        <button
-          @click="emit('openStats')"
-          title="看板"
-          aria-label="打开阅读高亮书签看板"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          <el-icon class="!text-lg text-stone-600"><Notebook /></el-icon>
-        </button>
-      </el-tooltip>
+      <button
+        @click="emit('openStats')"
+        title="查看统计与书签笔记"
+        aria-label="打开阅读高亮书签看板"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <Notebook class="w-4.5 h-4.5 text-stone-600" />
+      </button>
 
       <!-- 我的伴侣管理页面入口 -->
-      <el-tooltip content="我的角色" placement="left">
-        <button
-          @click="router.push('/companions')"
-          title="我的角色"
-          aria-label="进入伴侣管理库"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          <el-icon class="!text-lg text-stone-600"><User /></el-icon>
-        </button>
-      </el-tooltip>
+      <button
+        @click="router.push('/companions')"
+        title="我的角色"
+        aria-label="进入伴侣管理库"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <User class="w-4.5 h-4.5 text-stone-600" />
+      </button>
     </div>
 
     <hr class="theme-border opacity-50 w-6 mx-auto" />
@@ -101,43 +93,39 @@ function cycleLineHeight() {
     <!-- 【第三段：阅读排版设置（平铺恢复）】 -->
     <div class="flex flex-col gap-2.5 items-center">
       <!-- 单双页切换 -->
-      <el-tooltip :content="readerStore.isDoublePage ? '切换为单页' : '切换为双页'" placement="left">
-        <button
-          @click="readerStore.setDoublePage(!readerStore.isDoublePage)"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          <span class="text-[10px] font-bold leading-none">{{ readerStore.isDoublePage ? '双页' : '单页' }}</span>
-        </button>
-      </el-tooltip>
+      <button
+        @click="readerStore.setDoublePage(!readerStore.isDoublePage)"
+        :title="readerStore.isDoublePage ? '切换为单页' : '切换为双页'"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <span class="text-[10px] font-bold leading-none">{{ readerStore.isDoublePage ? '双页' : '单页' }}</span>
+      </button>
 
       <!-- 循环调节行高 -->
-      <el-tooltip :content="`行距: ${readerStore.lineHeight.toFixed(1)} (点击切换)`" placement="left">
-        <button
-          @click="cycleLineHeight"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          <span class="text-[10px] font-bold leading-none">L:{{ readerStore.lineHeight.toFixed(1) }}</span>
-        </button>
-      </el-tooltip>
+      <button
+        @click="cycleLineHeight"
+        :title="`行距: ${readerStore.lineHeight.toFixed(1)} (点击切换)`"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <span class="text-[10px] font-bold leading-none">L:{{ readerStore.lineHeight.toFixed(1) }}</span>
+      </button>
 
       <!-- 字号调节 -->
-      <el-tooltip content="放大字号" placement="left">
-        <button
-          @click="readerStore.changeFontSize(1)"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          A+
-        </button>
-      </el-tooltip>
+      <button
+        @click="readerStore.changeFontSize(1)"
+        title="放大字号"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        A+
+      </button>
       
-      <el-tooltip content="缩小字号" placement="left">
-        <button
-          @click="readerStore.changeFontSize(-1)"
-          class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-[10px] font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
-        >
-          A-
-        </button>
-      </el-tooltip>
+      <button
+        @click="readerStore.changeFontSize(-1)"
+        title="缩小字号"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-[10px] font-bold text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        A-
+      </button>
 
       <!-- 主题色 5 色点垂直平铺 -->
       <div class="flex flex-col gap-2 mt-1.5 items-center">

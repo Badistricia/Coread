@@ -23,6 +23,10 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
   const notes = ref<NoteRecord[]>([])
   const aiFragments = ref<AiFragmentRecord[]>([])
 
+  function resolveBookId(recordBookId?: string) {
+    return recordBookId || currentBookId.value
+  }
+
   // ── 初始化加载所有记录 ──
   async function initRecords(bookId: string) {
     currentBookId.value = bookId
@@ -34,6 +38,8 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
       loadAiFragments(bookId)
     ])
 
+    if (currentBookId.value !== bookId) return
+
     bookmarks.value = bList || []
     highlights.value = hList || []
     notes.value = nList || []
@@ -42,49 +48,74 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
 
   // ── 书签操作 ──
   async function addBookmark(b: Bookmark) {
-    if (bookmarks.value.some(x => x.chapterIndex === b.chapterIndex && x.pageIndex === b.pageIndex)) {
+    const bookId = resolveBookId(b.bookId)
+    if (!bookId) return
+    currentBookId.value = bookId
+
+    if (bookmarks.value.some(x => x.bookId === bookId && x.chapterIndex === b.chapterIndex && x.pageIndex === b.pageIndex)) {
       return // 防重复同一页
     }
     bookmarks.value.push(b)
-    await saveBookmarks(currentBookId.value, bookmarks.value)
+    await saveBookmarks(bookId, bookmarks.value.filter(x => x.bookId === bookId))
   }
 
   async function removeBookmark(id: string) {
+    const target = bookmarks.value.find(x => x.id === id)
+    const bookId = resolveBookId(target?.bookId)
+    if (!bookId) return
     bookmarks.value = bookmarks.value.filter(x => x.id !== id)
-    await saveBookmarks(currentBookId.value, bookmarks.value)
+    await saveBookmarks(bookId, bookmarks.value.filter(x => x.bookId === bookId))
   }
 
   // ── 高亮操作 ──
   async function addHighlight(h: HighlightRecord) {
+    const bookId = resolveBookId(h.bookId)
+    if (!bookId) return
+    currentBookId.value = bookId
     highlights.value.push(h)
-    await saveHighlights(currentBookId.value, highlights.value)
+    await saveHighlights(bookId, highlights.value.filter(x => x.bookId === bookId))
   }
 
   async function removeHighlight(id: string) {
+    const target = highlights.value.find(x => x.id === id)
+    const bookId = resolveBookId(target?.bookId)
+    if (!bookId) return
     highlights.value = highlights.value.filter(x => x.id !== id)
-    await saveHighlights(currentBookId.value, highlights.value)
+    await saveHighlights(bookId, highlights.value.filter(x => x.bookId === bookId))
   }
 
   // ── 随笔笔记操作 ──
   async function addNote(n: NoteRecord) {
+    const bookId = resolveBookId(n.bookId)
+    if (!bookId) return
+    currentBookId.value = bookId
     notes.value.push(n)
-    await saveNotes(currentBookId.value, notes.value)
+    await saveNotes(bookId, notes.value.filter(x => x.bookId === bookId))
   }
 
   async function removeNote(id: string) {
+    const target = notes.value.find(x => x.id === id)
+    const bookId = resolveBookId(target?.bookId)
+    if (!bookId) return
     notes.value = notes.value.filter(x => x.id !== id)
-    await saveNotes(currentBookId.value, notes.value)
+    await saveNotes(bookId, notes.value.filter(x => x.bookId === bookId))
   }
 
   // ── AI 片段操作 ──
   async function addAiFragment(f: AiFragmentRecord) {
+    const bookId = resolveBookId(f.bookId)
+    if (!bookId) return
+    currentBookId.value = bookId
     aiFragments.value.push(f)
-    await saveAiFragments(currentBookId.value, aiFragments.value)
+    await saveAiFragments(bookId, aiFragments.value.filter(x => x.bookId === bookId))
   }
 
   async function removeAiFragment(id: string) {
+    const target = aiFragments.value.find(x => x.id === id)
+    const bookId = resolveBookId(target?.bookId)
+    if (!bookId) return
     aiFragments.value = aiFragments.value.filter(x => x.id !== id)
-    await saveAiFragments(currentBookId.value, aiFragments.value)
+    await saveAiFragments(bookId, aiFragments.value.filter(x => x.bookId === bookId))
   }
 
   return {
