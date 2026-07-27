@@ -16,7 +16,11 @@ class Settings:
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o")
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+        if origin.strip()
+    ]
 
 
 settings = Settings()

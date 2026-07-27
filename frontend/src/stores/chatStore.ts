@@ -7,6 +7,8 @@ import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 import type { BookType } from '@/stores/readerStore'
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+
 export interface ChatMessage {
   role: 'user' | 'ai'
   content: string
@@ -224,7 +226,7 @@ export const useChatStore = defineStore('chat', () => {
     }) - 1
 
     try {
-      const response = await fetch('http://localhost:8010/api/chat', {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
