@@ -55,16 +55,18 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
     if (bookmarks.value.some(x => x.bookId === bookId && x.chapterIndex === b.chapterIndex && x.pageIndex === b.pageIndex)) {
       return // 防重复同一页
     }
-    bookmarks.value.push(b)
-    await saveBookmarks(bookId, bookmarks.value.filter(x => x.bookId === bookId))
+    const next = [...bookmarks.value, b]
+    bookmarks.value = next
+    await saveBookmarks(bookId, next.filter(x => x.bookId === bookId))
   }
 
   async function removeBookmark(id: string) {
     const target = bookmarks.value.find(x => x.id === id)
     const bookId = resolveBookId(target?.bookId)
     if (!bookId) return
-    bookmarks.value = bookmarks.value.filter(x => x.id !== id)
-    await saveBookmarks(bookId, bookmarks.value.filter(x => x.bookId === bookId))
+    const next = bookmarks.value.filter(x => x.id !== id)
+    bookmarks.value = next
+    await saveBookmarks(bookId, next.filter(x => x.bookId === bookId))
   }
 
   // ── 高亮操作 ──
@@ -72,16 +74,18 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
     const bookId = resolveBookId(h.bookId)
     if (!bookId) return
     currentBookId.value = bookId
-    highlights.value.push(h)
-    await saveHighlights(bookId, highlights.value.filter(x => x.bookId === bookId))
+    const next = [...highlights.value, h]
+    highlights.value = next
+    await saveHighlights(bookId, next.filter(x => x.bookId === bookId))
   }
 
   async function removeHighlight(id: string) {
     const target = highlights.value.find(x => x.id === id)
     const bookId = resolveBookId(target?.bookId)
     if (!bookId) return
-    highlights.value = highlights.value.filter(x => x.id !== id)
-    await saveHighlights(bookId, highlights.value.filter(x => x.bookId === bookId))
+    const next = highlights.value.filter(x => x.id !== id)
+    highlights.value = next
+    await saveHighlights(bookId, next.filter(x => x.bookId === bookId))
   }
 
   // ── 随笔笔记操作 ──
@@ -89,16 +93,18 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
     const bookId = resolveBookId(n.bookId)
     if (!bookId) return
     currentBookId.value = bookId
-    notes.value.push(n)
-    await saveNotes(bookId, notes.value.filter(x => x.bookId === bookId))
+    const next = [...notes.value, n]
+    notes.value = next
+    await saveNotes(bookId, next.filter(x => x.bookId === bookId))
   }
 
   async function removeNote(id: string) {
     const target = notes.value.find(x => x.id === id)
     const bookId = resolveBookId(target?.bookId)
     if (!bookId) return
-    notes.value = notes.value.filter(x => x.id !== id)
-    await saveNotes(bookId, notes.value.filter(x => x.bookId === bookId))
+    const next = notes.value.filter(x => x.id !== id)
+    notes.value = next
+    await saveNotes(bookId, next.filter(x => x.bookId === bookId))
   }
 
   // ── AI 片段操作 ──
@@ -106,16 +112,18 @@ export const useReadingRecordsStore = defineStore('readingRecords', () => {
     const bookId = resolveBookId(f.bookId)
     if (!bookId) return
     currentBookId.value = bookId
-    aiFragments.value.push(f)
-    await saveAiFragments(bookId, aiFragments.value.filter(x => x.bookId === bookId))
+    const next = [...aiFragments.value, f]
+    aiFragments.value = next
+    await saveAiFragments(bookId, next.filter(x => x.bookId === bookId))
   }
 
   async function removeAiFragment(id: string) {
     const target = aiFragments.value.find(x => x.id === id)
     const bookId = resolveBookId(target?.bookId)
     if (!bookId) return
-    aiFragments.value = aiFragments.value.filter(x => x.id !== id)
-    await saveAiFragments(bookId, aiFragments.value.filter(x => x.bookId === bookId))
+    const next = aiFragments.value.filter(x => x.id !== id)
+    aiFragments.value = next
+    await saveAiFragments(bookId, next.filter(x => x.bookId === bookId))
   }
 
   return {

@@ -1,4 +1,4 @@
-﻿# AI 共读 — 一键启动脚本 (PowerShell)
+﻿# CoRead — 一键启动脚本 (PowerShell)
 # -*- coding: utf-8 -*-
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -8,7 +8,7 @@ $env:PYTHONIOENCODING     = "UTF-8"
 $env:PYTHONUTF8           = "1"
 chcp 65001 > $null
 
-Write-Host "`n  AI 共读 — 启动中...`n" -ForegroundColor Cyan
+Write-Host "`n  CoRead — 启动中...`n" -ForegroundColor Cyan
 
 # 1. 确定根路径
 $scriptRoot = [string]$PSScriptRoot

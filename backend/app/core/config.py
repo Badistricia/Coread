@@ -7,7 +7,7 @@ load_dotenv()
 
 
 class Settings:
-    APP_NAME: str = "AI 共读 API"
+    APP_NAME: str = "CoRead API"
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
 
     # LLM

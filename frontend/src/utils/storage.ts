@@ -11,6 +11,19 @@ const noteStore = localforage.createInstance({ name: 'coread_notes' })
 const aiFragmentStore = localforage.createInstance({ name: 'coread_aifragments' })
 const customCompanionStore = localforage.createInstance({ name: 'coread_custom_companions' })
 
+function toPlainData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value))
+}
+
+const writeQueues: Record<string, Promise<void>> = {}
+
+function queuedSetItem<T>(queueKey: string, store: LocalForage, key: string, value: T): Promise<void> {
+  const previous = writeQueues[queueKey] || Promise.resolve()
+  const next = previous.catch(() => undefined).then(() => store.setItem(key, toPlainData(value))).then(() => undefined)
+  writeQueues[queueKey] = next
+  return next
+}
+
 // ── 书籍存取 ──
 export async function saveBook(bookId: string, content: string): Promise<void> {
   await bookStore.setItem(bookId, content)
@@ -26,7 +39,7 @@ export async function saveChatSessions(
   companionId: string,
   sessions: any[],
 ): Promise<void> {
-  await chatStore.setItem(`${bookId}_${companionId}_sessions`, sessions)
+  await chatStore.setItem(`${bookId}_${companionId}_sessions`, toPlainData(sessions))
 }
 
 export async function loadChatSessions(
@@ -47,7 +60,7 @@ export async function saveProgress(
   bookId: string,
   progress: ReadingProgress,
 ): Promise<void> {
-  await progressStore.setItem(bookId, progress)
+  await progressStore.setItem(bookId, toPlainData(progress))
 }
 
 export async function loadProgress(
@@ -71,7 +84,7 @@ export async function saveBookmarks(
   bookId: string,
   bookmarks: Bookmark[],
 ): Promise<void> {
-  await bookmarkStore.setItem(bookId, bookmarks)
+  await queuedSetItem(`bookmarks:${bookId}`, bookmarkStore, bookId, bookmarks)
 }
 
 export async function loadBookmarks(
@@ -90,7 +103,7 @@ export interface HighlightRecord {
   createdAt: string
 }
 export async function saveHighlights(bookId: string, list: HighlightRecord[]): Promise<void> {
-  await highlightStore.setItem(bookId, list)
+  await queuedSetItem(`highlights:${bookId}`, highlightStore, bookId, list)
 }
 export async function loadHighlights(bookId: string): Promise<HighlightRecord[] | null> {
   return highlightStore.getItem<HighlightRecord[]>(bookId)
@@ -109,7 +122,7 @@ export interface NoteRecord {
   updatedAt: string
 }
 export async function saveNotes(bookId: string, list: NoteRecord[]): Promise<void> {
-  await noteStore.setItem(bookId, list)
+  await queuedSetItem(`notes:${bookId}`, noteStore, bookId, list)
 }
 export async function loadNotes(bookId: string): Promise<NoteRecord[] | null> {
   return noteStore.getItem<NoteRecord[]>(bookId)
@@ -129,7 +142,7 @@ export interface AiFragmentRecord {
   createdAt: string
 }
 export async function saveAiFragments(bookId: string, list: AiFragmentRecord[]): Promise<void> {
-  await aiFragmentStore.setItem(bookId, list)
+  await queuedSetItem(`aiFragments:${bookId}`, aiFragmentStore, bookId, list)
 }
 export async function loadAiFragments(bookId: string): Promise<AiFragmentRecord[] | null> {
   return aiFragmentStore.getItem<AiFragmentRecord[]>(bookId)
@@ -143,7 +156,7 @@ export type { Companion } from '@/repositories/types'
  * @deprecated 已迁移至 repositories/companionRepository，请使用 companionRepo 代替
  */
 export async function saveCustomCompanions(list: Companion[]): Promise<void> {
-  await customCompanionStore.setItem('custom_companions', list)
+  await customCompanionStore.setItem('custom_companions', toPlainData(list))
 }
 
 /**

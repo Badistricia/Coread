@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# AI 共读 — Ubuntu/Linux 一键启动脚本
+# CoRead — Ubuntu/Linux 一键启动脚本
 set -e
 
 # 颜色控制
@@ -11,7 +11,7 @@ RED='\033[0;31m'
 NC='\033[0m' # 无颜色
 
 echo -e "\n${CYAN}==========================================${NC}"
-echo -e "${CYAN}      AI 共读 — Linux/Ubuntu 启动器       ${NC}"
+echo -e "${CYAN}      CoRead — Linux/Ubuntu 启动器       ${NC}"
 echo -e "${CYAN}==========================================${NC}\n"
 
 # 1. 确定工作路径

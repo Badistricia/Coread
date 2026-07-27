@@ -13,24 +13,152 @@ const uiStore = useUiStore()
 
 const showEditDialog = ref(false)
 const isEditMode = ref(false)
+const isTemplateCopyMode = ref(false)
 const toast = ref<{ text: string; tone: 'success' | 'warning' | 'error' | 'info' } | null>(null)
+const importInput = ref<HTMLInputElement | null>(null)
+const avatarInput = ref<HTMLInputElement | null>(null)
+const companionJson = ref('')
 let toastTimer: number | undefined
 
-const companionForm = ref<Companion>({
-  id: '',
-  name: '',
-  title: '',
-  description: '',
-  personality: '',
-  themeClass: 'theme-exclusive-custom',
-  accentStart: '#a3b19b',
-  accentEnd: '#6b7a66',
-  isCustom: true,
-  tone: '',
-  readingStyle: '',
-  midnightStyle: '',
-  callToUser: '你',
-})
+const MAX_AVATAR_BYTES = 1024 * 1024
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024
+const MAX_AVATAR_DATA_URL_LENGTH = Math.ceil(MAX_AVATAR_BYTES * 1.4) + 128
+const DEFAULT_START_COLOR = '#a3b19b'
+const DEFAULT_END_COLOR = '#6b7a66'
+
+function createEmptyCompanion(): Companion {
+  return {
+    id: 'custom_' + Date.now(),
+    name: '',
+    title: '',
+    description: '',
+    personality: '',
+    themeClass: 'theme-exclusive-custom',
+    accentStart: DEFAULT_START_COLOR,
+    accentEnd: DEFAULT_END_COLOR,
+    isCustom: true,
+    tone: '',
+    readingStyle: '',
+    midnightStyle: '',
+    callToUser: '你',
+  }
+}
+
+function toEditableCompanion(source: Companion, asTemplateCopy = false): Companion {
+  const copy: Companion = JSON.parse(JSON.stringify(source))
+  return {
+    ...copy,
+    id: asTemplateCopy ? 'custom_' + Date.now() : copy.id,
+    name: asTemplateCopy ? `${copy.name} (模板)` : copy.name,
+    isCustom: true,
+    tone: copy.tone || copy.voice?.tone || '',
+    readingStyle: copy.readingStyle || copy.reading?.style || '',
+    midnightStyle: copy.midnightStyle || copy.behavior?.nightReminderStyle || '',
+    callToUser: copy.callToUser || copy.relationship?.callToUser || '你',
+  }
+}
+
+function normalizeCompanionBeforeSave(source: Companion): Companion {
+  const c = sanitizeCompanion(source, true)
+  c.basic = { ...(c.basic || {}), identity: c.description }
+  c.relationship = { ...(c.relationship || {}), callToUser: c.callToUser || '你' }
+  c.voice = { ...(c.voice || {}), tone: c.tone || '' }
+  c.reading = { ...(c.reading || {}), style: c.readingStyle || '' }
+  c.behavior = { ...(c.behavior || {}), nightReminderStyle: c.midnightStyle || '' }
+  return c
+}
+
+const companionForm = ref<Companion>(createEmptyCompanion())
+
+function limitText(value: unknown, max: number) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : ''
+}
+
+function validColor(value: unknown, fallback: string) {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
+}
+
+function safeAvatar(value: unknown) {
+  if (typeof value !== 'string') return ''
+  if (!value.startsWith('data:image/')) return ''
+  return value.length <= MAX_AVATAR_DATA_URL_LENGTH ? value : ''
+}
+
+function canRenderAvatar(value: unknown) {
+  return typeof value === 'string' && value.startsWith('data:image/')
+}
+
+function pickNestedText(source: any, section: string, key: string, max: number) {
+  return limitText(source?.[section]?.[key], max)
+}
+
+function sanitizeCompanion(source: any, keepId = false): Companion {
+  const base = createEmptyCompanion()
+  return {
+    ...base,
+    id: keepId && typeof source?.id === 'string' ? source.id : base.id,
+    name: limitText(source?.name, 15),
+    title: limitText(source?.title, 30),
+    description: limitText(source?.description || source?.basic?.identity, 2000),
+    personality: limitText(source?.personality, 200),
+    themeClass: 'theme-exclusive-custom',
+    accentStart: validColor(source?.accentStart, DEFAULT_START_COLOR),
+    accentEnd: validColor(source?.accentEnd, DEFAULT_END_COLOR),
+    isCustom: true,
+    avatar: safeAvatar(source?.avatar),
+    tone: limitText(source?.tone || source?.voice?.tone, 500),
+    readingStyle: limitText(source?.readingStyle || source?.reading?.style, 500),
+    midnightStyle: limitText(source?.midnightStyle || source?.behavior?.nightReminderStyle, 500),
+    callToUser: limitText(source?.callToUser || source?.relationship?.callToUser, 15) || '你',
+    basic: {
+      identity: pickNestedText(source, 'basic', 'identity', 2000),
+      species: pickNestedText(source, 'basic', 'species', 100),
+    },
+    relationship: {
+      callToUser: limitText(source?.callToUser || source?.relationship?.callToUser, 15) || '你',
+      style: pickNestedText(source, 'relationship', 'style', 1000),
+      boundary: pickNestedText(source, 'relationship', 'boundary', 1000),
+    },
+    voice: {
+      tone: limitText(source?.tone || source?.voice?.tone, 500),
+      sentenceStyle: pickNestedText(source, 'voice', 'sentenceStyle', 1000),
+      forbiddenPhrases: pickNestedText(source, 'voice', 'forbiddenPhrases', 1000),
+      emojiStyle: pickNestedText(source, 'voice', 'emojiStyle', 500),
+    },
+    reading: {
+      style: limitText(source?.readingStyle || source?.reading?.style, 500),
+      discussionDepth: pickNestedText(source, 'reading', 'discussionDepth', 1000),
+    },
+    behavior: {
+      idleChatStyle: pickNestedText(source, 'behavior', 'idleChatStyle', 1000),
+      comfortStyle: pickNestedText(source, 'behavior', 'comfortStyle', 1000),
+      questionStyle: pickNestedText(source, 'behavior', 'questionStyle', 1000),
+      nightReminderStyle: limitText(source?.midnightStyle || source?.behavior?.nightReminderStyle, 500),
+    },
+    prompt: {
+      personaNotes: pickNestedText(source, 'prompt', 'personaNotes', 1000),
+    },
+  }
+}
+
+function syncCompanionJson() {
+  companionJson.value = JSON.stringify(normalizeCompanionBeforeSave(companionForm.value), null, 2)
+}
+
+function applyCompanionJsonToForm() {
+  try {
+    companionForm.value = sanitizeCompanion(JSON.parse(companionJson.value), true)
+    syncCompanionJson()
+    notify('已应用 JSON 人设', 'success')
+  } catch (err: any) {
+    notify(err.message || 'JSON 格式不正确', 'error')
+  }
+}
+
+function refreshCompanionJson() {
+  syncCompanionJson()
+  notify('已刷新 JSON 预览', 'info')
+}
 
 // 经典莫兰迪双色色卡预设
 const colorPresets = [
@@ -56,32 +184,22 @@ function selectPresetColor(start: string, end: string) {
 
 function openAddDialog() {
   isEditMode.value = false
-  companionForm.value = {
-    id: 'custom_' + Date.now(),
-    name: '',
-    title: '',
-    description: '',
-    personality: '',
-    themeClass: 'theme-exclusive-custom',
-    accentStart: '#a3b19b',
-    accentEnd: '#6b7a66',
-    isCustom: true,
-    tone: '',
-    readingStyle: '',
-    midnightStyle: '',
-    callToUser: '你',
-  }
+  isTemplateCopyMode.value = false
+  companionForm.value = createEmptyCompanion()
+  syncCompanionJson()
   showEditDialog.value = true
 }
 
 function openEditDialog(c: Companion) {
   isEditMode.value = true
-  companionForm.value = { ...c }
+  isTemplateCopyMode.value = false
+  companionForm.value = toEditableCompanion(c)
+  syncCompanionJson()
   showEditDialog.value = true
 }
 
 async function handleSaveCompanion() {
-  const c = companionForm.value
+  const c = normalizeCompanionBeforeSave(companionForm.value)
   if (!c.name.trim()) {
     notify('请输入角色名字', 'warning')
     return
@@ -93,6 +211,7 @@ async function handleSaveCompanion() {
 
   try {
     await companionStore.addCustomCompanion(c)
+    companionStore.setCompanion(c.id)
     notify(isEditMode.value ? '编辑角色成功' : '新增角色成功')
     showEditDialog.value = false
   } catch (err: any) {
@@ -109,23 +228,112 @@ function selectCompanion(id: string) {
   notify('已选用该阅读伴侣')
 }
 
-// 复制模板克隆人设
-function copyTemplate(template: Companion) {
+// 查看内置模板，并以自定义副本形式编辑保存
+function openTemplateEditor(template: Companion) {
   isEditMode.value = false
-  companionForm.value = {
-    ...template,
-    id: 'custom_' + Date.now(),
-    name: template.name + ' (克隆)',
-    isCustom: true,
-  }
+  isTemplateCopyMode.value = true
+  companionForm.value = toEditableCompanion(template, true)
+  syncCompanionJson()
   showEditDialog.value = true
-  notify('已载入模板，您可以继续自定义调整', 'info')
+  notify('已载入模板，可查看设定并编辑为自定义角色', 'info')
+}
+
+function exportCompanion(c: Companion) {
+  const blob = new Blob([JSON.stringify(c, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `coread-companion-${c.name || c.id}.json`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportCustomCompanions() {
+  const data = companionStore.customCompanions
+  if (data.length === 0) {
+    notify('暂无自定义角色可导出', 'warning')
+    return
+  }
+  const blob = new Blob([JSON.stringify({ companions: data }, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'coread-custom-companions.json'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+async function importCompanionJson(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  if (file.size > MAX_IMPORT_BYTES) {
+    notify('JSON 文件过大，请控制在 2MB 以内', 'warning')
+    target.value = ''
+    return
+  }
+
+  try {
+    const raw = await file.text()
+    const parsed = JSON.parse(raw)
+    const list: Companion[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed.companions) ? parsed.companions : [parsed]
+    let imported = 0
+
+    for (const item of list) {
+      if (!item || typeof item !== 'object' || !item.name || !item.title) continue
+      if (companionStore.customCompanions.length >= 5) break
+
+      const next = sanitizeCompanion(item)
+      next.id = `custom_${Date.now()}_${imported}`
+      await companionStore.addCustomCompanion(next)
+      imported++
+    }
+
+    notify(imported > 0 ? `已导入 ${imported} 个角色` : '未找到可导入的角色 JSON', imported > 0 ? 'success' : 'warning')
+  } catch (err: any) {
+    notify(err.message || 'JSON 导入失败', 'error')
+  } finally {
+    target.value = ''
+  }
+}
+
+function onAvatarUploaded(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    notify('请选择图片文件', 'warning')
+    target.value = ''
+    return
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    notify('头像图片请控制在 1MB 以内', 'warning')
+    target.value = ''
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    companionForm.value.avatar = String(reader.result || '')
+    syncCompanionJson()
+  }
+  reader.readAsDataURL(file)
+  target.value = ''
+}
+
+function removeAvatar() {
+  companionForm.value.avatar = ''
+  syncCompanionJson()
 }
 
 // 更多操作下拉处理
 async function handleCommand(cmd: string, c: Companion) {
   if (cmd === 'edit') {
     openEditDialog(c)
+  } else if (cmd === 'template') {
+    openTemplateEditor(c)
+  } else if (cmd === 'export') {
+    exportCompanion(c)
   } else if (cmd === 'delete') {
     const ok = await uiStore.confirm({
       title: '删除自定义角色',
@@ -177,6 +385,23 @@ onUnmounted(() => {
       </button>
       <h1 class="text-base font-bold text-[var(--color-read-title)]">共读角色人设库</h1>
       <span class="text-xs opacity-50">在这里编辑您专属的 AI 伴侣人设，支持最多 5 个自定义角色</span>
+      <div class="ml-auto flex items-center gap-2">
+        <input ref="importInput" type="file" accept=".json,application/json" class="hidden" @change="importCompanionJson" />
+        <button
+          class="px-3 py-1.5 rounded-full text-xs font-semibold border theme-border bg-transparent hover:bg-stone-500/10 transition-colors flex items-center gap-1.5"
+          @click="importInput?.click()"
+        >
+          <Upload class="w-3.5 h-3.5" />
+          导入 JSON
+        </button>
+        <button
+          class="px-3 py-1.5 rounded-full text-xs font-semibold border theme-border bg-transparent hover:bg-stone-500/10 transition-colors flex items-center gap-1.5"
+          @click="exportCustomCompanions"
+        >
+          <Download class="w-3.5 h-3.5" />
+          导出自定义
+        </button>
+      </div>
     </header>
 
     <!-- 卡片展示网格 -->
@@ -201,10 +426,11 @@ onUnmounted(() => {
 
           <!-- 头像/首字浮在横幅上 -->
           <div 
-            class="w-16 h-16 rounded-full text-white flex items-center justify-center text-lg font-bold shadow-md -mt-8 border-2 border-[var(--color-read-bg)]"
+            class="w-16 h-16 rounded-full text-white flex items-center justify-center text-lg font-bold shadow-md -mt-8 border-2 border-[var(--color-read-bg)] overflow-hidden"
             :style="{ background: `linear-gradient(135deg, ${c.accentStart}, ${c.accentEnd})` }"
           >
-            {{ c.name[0] }}
+            <img v-if="canRenderAvatar(c.avatar)" :src="c.avatar" :alt="c.name" class="w-full h-full object-cover" />
+            <span v-else>{{ c.name[0] }}</span>
           </div>
 
           <!-- 角色信息 -->
@@ -262,17 +488,24 @@ onUnmounted(() => {
                   <div 
                     v-if="activeDropdownId === c.id"
                     @click.stop
-                    class="absolute right-0 bottom-full mb-2 w-36 bg-[var(--color-read-bg)]/95 backdrop-blur-md border theme-border rounded-xl shadow-lg p-1 z-50 flex flex-col gap-0.5"
+                    class="absolute right-0 bottom-full mb-2 w-40 bg-[var(--color-read-bg)]/95 backdrop-blur-md border theme-border rounded-xl shadow-lg p-1 z-50 flex flex-col gap-0.5"
                   >
                     <template v-if="c.isCustom">
-                      <button 
+                      <button
                         @click="handleCommand('edit', c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-read-text)] hover:bg-stone-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
                         <Edit class="w-3.5 h-3.5 text-stone-400" />
                         <span>编辑人设</span>
                       </button>
-                      <button 
+                      <button
+                        @click="handleCommand('export', c); activeDropdownId = null"
+                        class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-read-text)] hover:bg-stone-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
+                      >
+                        <Download class="w-3.5 h-3.5 text-stone-400" />
+                        <span>导出 JSON</span>
+                      </button>
+                      <button
                         @click="handleCommand('delete', c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-red-500 font-semibold hover:bg-red-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
@@ -281,12 +514,19 @@ onUnmounted(() => {
                       </button>
                     </template>
                     <template v-else>
-                      <button 
-                        @click="copyTemplate(c); activeDropdownId = null"
+                      <button
+                        @click="handleCommand('template', c); activeDropdownId = null"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
                       >
-                        <CopyDocument class="w-3.5 h-3.5" />
-                        <span>克隆为人设模板</span>
+                        <Edit class="w-3.5 h-3.5" />
+                        <span>查看/编辑模板</span>
+                      </button>
+                      <button
+                        @click="handleCommand('export', c); activeDropdownId = null"
+                        class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs text-[var(--color-read-text)] hover:bg-stone-500/10 transition-colors flex items-center gap-1.5 cursor-pointer bg-transparent border-none"
+                      >
+                        <Download class="w-3.5 h-3.5 text-stone-400" />
+                        <span>导出 JSON</span>
                       </button>
                     </template>
                   </div>
@@ -319,13 +559,13 @@ onUnmounted(() => {
         <Transition name="modal-scale">
           <div 
             v-if="showEditDialog"
-            class="relative w-full max-w-[920px] bg-[var(--color-read-bg)] border theme-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 transition-all duration-300"
+            class="relative w-full max-w-[1180px] bg-[var(--color-read-bg)] border theme-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] z-10 transition-all duration-300"
           >
             <!-- 头部 -->
-            <header class="px-6 py-5 border-b theme-border flex items-center justify-between bg-stone-500/5">
+            <header class="px-7 py-5 border-b theme-border flex items-center justify-between bg-stone-500/5">
               <div>
                 <h2 class="text-base font-bold text-[var(--color-read-title)]">
-                  {{ isEditMode ? '编辑伴侣人设' : '新建自定义伴侣' }}
+                  {{ isEditMode ? '编辑伴侣人设' : isTemplateCopyMode ? '编辑模板副本' : '新建自定义伴侣' }}
                 </h2>
                 <p class="text-[10px] text-stone-400 mt-1">把角色写成一张可共读的人格卡，而不是一段失控的长 Prompt。</p>
               </div>
@@ -338,36 +578,37 @@ onUnmounted(() => {
             </header>
             
             <!-- 内容区 -->
-            <div class="flex-1 overflow-y-auto p-6 flex gap-6 items-start">
+            <div class="flex-1 overflow-hidden p-7 flex gap-7 items-start">
               <!-- 左侧：所见即所得实时卡片渲染预览 -->
-              <div class="w-72 border theme-border rounded-2xl bg-stone-500/5 p-4 flex flex-col items-center justify-between shadow-inner shrink-0 relative overflow-hidden">
+              <div class="w-80 border theme-border rounded-xl bg-stone-500/5 p-5 flex flex-col items-center justify-between shadow-inner shrink-0 relative overflow-hidden">
                 <div 
-                  class="absolute top-0 left-0 right-0 h-12 opacity-20"
+                  class="absolute top-0 left-0 right-0 h-16 opacity-20"
                   :style="{ background: `linear-gradient(135deg, ${companionForm.accentStart}, ${companionForm.accentEnd})` }"
                 ></div>
                 
                 <div 
-                  class="w-14 h-14 rounded-full text-white flex items-center justify-center text-lg font-bold shadow-md z-10 border border-[var(--color-read-bg)]"
+                  class="w-20 h-20 rounded-full text-white flex items-center justify-center text-2xl font-bold shadow-md z-10 border-2 border-[var(--color-read-bg)] overflow-hidden"
                   :style="{ background: `linear-gradient(135deg, ${companionForm.accentStart}, ${companionForm.accentEnd})` }"
                 >
-                  {{ companionForm.name ? companionForm.name[0] : '？' }}
+                  <img v-if="canRenderAvatar(companionForm.avatar)" :src="companionForm.avatar" :alt="companionForm.name" class="w-full h-full object-cover" />
+                  <span v-else>{{ companionForm.name ? companionForm.name[0] : '？' }}</span>
                 </div>
                 
                 <div class="text-center mt-3 w-full">
-                  <h3 class="font-bold text-sm text-[var(--color-read-title)] truncate">{{ companionForm.name || '角色名字' }}</h3>
-                  <p class="text-[10px] text-stone-400 truncate mt-0.5">{{ companionForm.title || '身份名号' }}</p>
+                  <h3 class="font-bold text-lg text-[var(--color-read-title)] truncate">{{ companionForm.name || '角色名字' }}</h3>
+                  <p class="text-xs text-stone-400 truncate mt-1">{{ companionForm.title || '身份名号' }}</p>
                   
                   <div class="flex flex-wrap justify-center gap-1 mt-2">
                     <span 
                       v-for="tag in (companionForm.personality || '人设标签').split(/[，, ]+/)" 
                       :key="tag"
-                      class="text-[8px] px-1.5 py-0.5 rounded-md bg-stone-500/15"
+                      class="text-[10px] px-2 py-1 rounded-md bg-stone-500/15"
                     >
                       {{ tag }}
                     </span>
                   </div>
                   
-                  <p class="text-[10px] text-[var(--color-read-text)] opacity-70 mt-3 line-clamp-3 leading-relaxed border-t theme-border pt-2 text-left">
+                  <p class="text-xs text-[var(--color-read-text)] opacity-75 mt-4 line-clamp-6 leading-relaxed border-t theme-border pt-3 text-left">
                     {{ companionForm.description || '在这里，您可以为您的伴侣撰写详细的身世背景人设描述。' }}
                   </p>
                 </div>
@@ -379,15 +620,48 @@ onUnmounted(() => {
               </div>
 
               <!-- 右侧：详细配置表单 (完全定制) -->
-              <form @submit.prevent class="flex-1 space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-form select-none">
-                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 space-y-4">
+              <form @submit.prevent class="flex-1 space-y-5 max-h-[calc(92vh-150px)] overflow-y-auto pr-3 custom-form select-none">
+                <section class="rounded-xl border theme-border bg-stone-500/5 p-5 space-y-5">
                   <div>
-                    <h3 class="text-xs font-bold text-[var(--color-read-title)]">基础身份</h3>
+                    <h3 class="text-sm font-bold text-[var(--color-read-title)]">基础身份</h3>
                     <p class="text-[10px] text-stone-400 mt-0.5">名字、身份和用户称呼会最直接影响角色稳定性。</p>
                   </div>
-                <div class="grid grid-cols-2 gap-4">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">角色名字 <span class="text-red-500">*</span></label>
+                  <div class="flex items-center justify-between gap-4 rounded-xl border theme-border bg-stone-500/5 px-4 py-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div
+                        class="w-14 h-14 rounded-full text-white flex items-center justify-center text-base font-bold overflow-hidden shrink-0"
+                        :style="{ background: `linear-gradient(135deg, ${companionForm.accentStart}, ${companionForm.accentEnd})` }"
+                      >
+                        <img v-if="canRenderAvatar(companionForm.avatar)" :src="companionForm.avatar" :alt="companionForm.name" class="w-full h-full object-cover" />
+                        <span v-else>{{ companionForm.name ? companionForm.name[0] : '？' }}</span>
+                      </div>
+                      <div class="min-w-0">
+                        <div class="text-xs font-bold text-[var(--color-read-text)] opacity-85">头像</div>
+                        <div class="text-[10px] text-stone-400 truncate">本地图片会跟随角色 JSON 保存在 IndexedDB。</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <input ref="avatarInput" type="file" accept="image/*" class="hidden" @change="onAvatarUploaded" />
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg border theme-border text-xs font-semibold bg-transparent hover:bg-stone-500/10 transition-colors"
+                        @click="avatarInput?.click()"
+                      >
+                        上传
+                      </button>
+                      <button
+                        v-if="companionForm.avatar"
+                        type="button"
+                        class="px-3 py-2 rounded-lg border theme-border text-xs font-semibold bg-transparent hover:bg-red-500/10 text-red-500 transition-colors"
+                        @click="removeAvatar"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-12 gap-4">
+                  <div class="col-span-3 flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">角色名字 <span class="text-red-500">*</span></label>
                     <input 
                       v-model="companionForm.name" 
                       placeholder="例: 莫非" 
@@ -395,8 +669,8 @@ onUnmounted(() => {
                       class="custom-input"
                     />
                   </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">角色身份名号 <span class="text-red-500">*</span></label>
+                  <div class="col-span-4 flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">角色身份名号 <span class="text-red-500">*</span></label>
                     <input 
                       v-model="companionForm.title" 
                       placeholder="例: 皇家占星术士" 
@@ -404,11 +678,8 @@ onUnmounted(() => {
                       class="custom-input"
                     />
                   </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">如何称呼您 (称呼用户为)</label>
+                  <div class="col-span-2 flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">称呼用户</label>
                     <input 
                       v-model="companionForm.callToUser" 
                       placeholder="例: 兔子、夫人、少主" 
@@ -416,8 +687,8 @@ onUnmounted(() => {
                       class="custom-input"
                     />
                   </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">性格标签 (空格或逗号隔开)</label>
+                  <div class="col-span-3 flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">性格标签</label>
                     <input 
                       v-model="companionForm.personality" 
                       placeholder="例: 腹黑, 温雅, 毒舌" 
@@ -426,57 +697,57 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">人设背景描述</label>
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">人设背景描述</label>
                   <textarea 
                     v-model="companionForm.description" 
-                    :rows="2" 
+                    :rows="4"
                     placeholder="详细输入角色的背景来历，帮助伴侣更深层次理解对话情境。" 
-                    class="custom-textarea text-xs"
+                    class="custom-textarea text-sm"
                   ></textarea>
                 </div>
                 </section>
 
-                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 space-y-4">
+                <section class="rounded-xl border theme-border bg-stone-500/5 p-5 space-y-5">
                 <div>
-                  <h3 class="text-xs font-bold text-[var(--color-read-title)]">共读人格</h3>
+                  <h3 class="text-sm font-bold text-[var(--color-read-title)]">共读人格</h3>
                   <p class="text-[10px] text-stone-400 mt-0.5">控制他说话的声音、读书时关注什么，以及深夜怎样提醒。</p>
                 </div>
 
-                <div class="grid grid-cols-3 gap-3">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">说话语气</label>
+                <div class="grid grid-cols-3 gap-4">
+                  <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">说话语气</label>
                     <textarea 
                       v-model="companionForm.tone" 
-                      :rows="2" 
+                      :rows="4"
                       placeholder="例: 慵懒低沉，喜欢戏谑" 
-                      class="custom-textarea text-xs"
+                      class="custom-textarea text-sm"
                     ></textarea>
                   </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">读书批注风格</label>
+                  <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">读书批注风格</label>
                     <textarea 
                       v-model="companionForm.readingStyle" 
-                      :rows="2" 
+                      :rows="4"
                       placeholder="例: 关注伏笔细节" 
-                      class="custom-textarea text-xs"
+                      class="custom-textarea text-sm"
                     ></textarea>
                   </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">深夜问候语气</label>
+                  <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">深夜问候语气</label>
                     <textarea 
                       v-model="companionForm.midnightStyle" 
-                      :rows="2" 
+                      :rows="4"
                       placeholder="例: 强硬催促休息" 
-                      class="custom-textarea text-xs"
+                      class="custom-textarea text-sm"
                     ></textarea>
                   </div>
                 </div>
                 </section>
 
                 <!-- 色卡选取与微调 -->
-                <section class="rounded-2xl border theme-border bg-stone-500/5 p-4 flex flex-col gap-2">
-                  <label class="text-[10px] font-bold text-[var(--color-read-text)] opacity-85">人设卡片主题色 (双色莫兰迪渐变)</label>
+                <section class="rounded-xl border theme-border bg-stone-500/5 p-5 flex flex-col gap-3">
+                  <label class="text-[11px] font-bold text-[var(--color-read-text)] opacity-85">人设卡片主题色 (双色莫兰迪渐变)</label>
                   <div class="flex flex-col gap-2.5 w-full">
                     <!-- 快捷莫兰迪色色卡 -->
                     <div class="flex flex-wrap gap-2">
@@ -485,7 +756,7 @@ onUnmounted(() => {
                         :key="p.name"
                         type="button"
                         @click="selectPresetColor(p.start, p.end)"
-                        class="px-2 py-1 text-[10px] rounded-lg border theme-border flex items-center gap-1 hover:bg-stone-500/5 transition-all cursor-pointer bg-transparent"
+                        class="px-3 py-1.5 text-[11px] rounded-lg border theme-border flex items-center gap-1.5 hover:bg-stone-500/5 transition-all cursor-pointer bg-transparent"
                       >
                         <span 
                           class="w-2 h-2 rounded-full" 
@@ -496,7 +767,7 @@ onUnmounted(() => {
                     </div>
 
                     <!-- ColorPicker 自由微调 (原生替代，极简化奢华风格) -->
-                    <div class="flex items-center gap-4 bg-stone-500/5 p-2.5 rounded-xl border theme-border">
+                    <div class="flex items-center gap-6 bg-stone-500/5 p-3 rounded-xl border theme-border">
                       <div class="flex items-center gap-2">
                         <span class="text-[10px] opacity-65">首色:</span>
                         <div class="relative w-7 h-7 rounded-full border theme-border overflow-hidden cursor-pointer hover:scale-105 transition-transform flex items-center justify-center bg-stone-500/5">
@@ -523,6 +794,37 @@ onUnmounted(() => {
                       </div>
                     </div>
                   </div>
+                </section>
+
+                <section class="rounded-xl border theme-border bg-stone-500/5 p-5 space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 class="text-sm font-bold text-[var(--color-read-title)]">完整人设 JSON</h3>
+                      <p class="text-[10px] text-stone-400 mt-0.5">查看和编辑完整设定；改完后先应用 JSON，再保存。</p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg border theme-border text-xs font-semibold bg-transparent hover:bg-stone-500/10 transition-colors"
+                        @click="refreshCompanionJson"
+                      >
+                        刷新 JSON
+                      </button>
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg border theme-border text-xs font-semibold text-[var(--color-primary)] bg-transparent hover:bg-[var(--color-primary)]/10 transition-colors"
+                        @click="applyCompanionJsonToForm"
+                      >
+                        应用 JSON
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    v-model="companionJson"
+                    :rows="14"
+                    spellcheck="false"
+                    class="custom-textarea text-xs font-mono leading-relaxed"
+                  ></textarea>
                 </section>
               </form>
             </div>
@@ -589,14 +891,19 @@ onUnmounted(() => {
 .custom-input,
 .custom-textarea {
   width: 100%;
-  padding: 8px 12px;
-  font-size: 12px;
-  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-radius: 10px;
   border: 1px solid var(--color-read-border);
-  background-color: var(--color-read-bg);
+  background-color: color-mix(in srgb, var(--color-read-bg) 92%, white 8%);
   color: var(--color-read-text);
   outline: none;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.custom-textarea {
+  resize: vertical;
+  min-height: 96px;
 }
 
 .custom-input::placeholder,

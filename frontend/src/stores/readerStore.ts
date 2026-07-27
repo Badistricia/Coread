@@ -24,6 +24,9 @@ export const useReaderStore = defineStore('reader', () => {
   const themeStyle: Ref<string> = ref(
     localStorage.getItem('coread_theme_style') || 'read-theme-a'
   )
+  const isNightLampOn: Ref<boolean> = ref(
+    localStorage.getItem('coread_night_lamp_on') === 'true'
+  )
   const isDoublePage: Ref<boolean> = ref(
     localStorage.getItem('coread_is_double_page') !== 'false'
   )
@@ -195,6 +198,11 @@ export const useReaderStore = defineStore('reader', () => {
     localStorage.setItem('coread_theme_style', style)
   }
 
+  function setNightLampOn(val: boolean) {
+    isNightLampOn.value = val
+    localStorage.setItem('coread_night_lamp_on', String(val))
+  }
+
   function resetReadingTimer() {
     readingStartTime.value = Date.now()
   }
@@ -243,6 +251,7 @@ export const useReaderStore = defineStore('reader', () => {
     currentPageContent,
     fontSize,
     themeStyle,
+    isNightLampOn,
     isDoublePage,
     lineHeight,
     bookType,
@@ -260,6 +269,7 @@ export const useReaderStore = defineStore('reader', () => {
     updateViewport,
     changeFontSize,
     setThemeStyle,
+    setNightLampOn,
     resetReadingTimer,
     setDoublePage,
     setLineHeight,

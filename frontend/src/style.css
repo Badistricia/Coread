@@ -26,6 +26,12 @@ html, body, #app {
   --color-accent: #78350f;
   --color-highlight-mark: rgba(251, 191, 36, 0.35);
   --color-highlight-border: #d97706;
+  --color-mark-highlight-bg: rgba(245, 158, 11, 0.24);
+  --color-mark-highlight-border: #c27a16;
+  --color-mark-quote-bg: rgba(14, 165, 233, 0.2);
+  --color-mark-quote-border: #0284c7;
+  --color-mark-note-bg: rgba(16, 185, 129, 0.18);
+  --color-mark-note-border: #059669;
 }
 
 /* 萧逸 (xiaoyi) */
@@ -155,6 +161,12 @@ html, body, #app {
   --color-primary-hover: #3f3f46;
   --color-bg-bubble-user: #3f3f46;
   --color-text-bubble-user: #f4f4f5;
+  --color-mark-highlight-bg: rgba(245, 158, 11, 0.3);
+  --color-mark-highlight-border: #f59e0b;
+  --color-mark-quote-bg: rgba(56, 189, 248, 0.24);
+  --color-mark-quote-border: #38bdf8;
+  --color-mark-note-bg: rgba(52, 211, 153, 0.22);
+  --color-mark-note-border: #34d399;
 }
 
 
@@ -363,10 +375,20 @@ html, body, #app {
 }
 
 /* 划线与批注高亮样式 */
+.user-highlight-mark,
+.quote-highlight-mark,
+.note-highlight-mark,
+.ai-annotation-mark {
+  border-radius: 3px;
+  padding: 0 0.04em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .ai-annotation-mark {
   background-color: var(--color-highlight-mark);
   border-bottom: 2px dashed var(--color-highlight-border);
-  cursor: pointer;
+  cursor: help;
   transition: background-color 0.2s ease;
 }
 .ai-annotation-mark:hover {
@@ -374,12 +396,28 @@ html, body, #app {
 }
 
 .user-highlight-mark {
-  background-color: var(--color-highlight-mark);
-  border-bottom: 2px solid var(--color-highlight-border);
+  background-color: var(--color-mark-highlight-bg);
+  border-bottom: 2px solid var(--color-mark-highlight-border);
   cursor: pointer;
   transition: background-color 0.2s ease, filter 0.2s ease;
 }
-.user-highlight-mark:hover {
+
+.quote-highlight-mark {
+  background-color: var(--color-mark-quote-bg);
+  border-bottom: 2px solid var(--color-mark-quote-border);
+  cursor: pointer;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+}
+
+.note-highlight-mark {
+  background-color: var(--color-mark-note-bg);
+  border-bottom: 2px solid var(--color-mark-note-border);
+  cursor: pointer;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+}
+.user-highlight-mark:hover,
+.quote-highlight-mark:hover,
+.note-highlight-mark:hover {
   filter: brightness(0.92);
 }
 
@@ -547,4 +585,3 @@ html, body, #app {
 .stats-dialog .el-tabs__content {
   padding: 16px 0 0 0 !important;
 }
-

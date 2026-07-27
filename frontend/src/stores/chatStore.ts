@@ -34,6 +34,10 @@ export type ChatScene =
   | 'continue'
   | 'playful_ping'
   | 'companion_idle'
+  | 'start_reading'
+  | 'highlight'
+  | 'chapter_finished'
+  | 'reading_streak'
   | 'night'
 
 export interface StreamResponseOptions {
@@ -178,7 +182,7 @@ export const useChatStore = defineStore('chat', () => {
     currentChapter: number,
     options: StreamResponseOptions = {}
   ) {
-    if (isStreaming.value || !currentSession.value) return
+    if (isStreaming.value || !currentSession.value) return false
 
     // 取消上一个未完成的流式请求
     if (abortController) {
@@ -345,6 +349,7 @@ export const useChatStore = defineStore('chat', () => {
         console.error('Error in streamResponse finally block:', err)
       }
     }
+    return isSuccess
   }
 
   return {

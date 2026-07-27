@@ -3,10 +3,11 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import ChatBox from '@/components/ChatBox.vue'
 import SelectionToolbar from '@/components/SelectionToolbar.vue'
-import { useChatStore } from '@/stores/chatStore'
+import { useChatStore, type ChatScene } from '@/stores/chatStore'
 import { useReaderStore, type BookType } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
+import { useUiStore } from '@/stores/uiStore'
 import { parseTxt, decodeText, paginateText } from '@/utils/reader'
 import { saveBook, loadBook, saveProgress, loadProgress } from '@/utils/storage'
 
@@ -20,6 +21,7 @@ const chatStore = useChatStore()
 const readerStore = useReaderStore()
 const companionStore = useCompanionStore()
 const recordsStore = useReadingRecordsStore()
+const uiStore = useUiStore()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const readerContentRef = ref<HTMLElement | null>(null)
@@ -28,8 +30,11 @@ const showDirectory = ref(false)
 const showChatDrawer = ref(true) // 聊天抽屉开关状态
 const showStatsDialog = ref(false) // 统计弹窗显示开关
 const showSearchDialog = ref(false) // 全文搜索结果弹窗
+const showFirstVisitGuide = ref(false)
 const lastPageTurnAt = ref(Date.now())
 const nightReminderInFlight = ref(false)
+const sceneTriggerInFlight = ref(false)
+const suppressSceneTriggers = ref(false)
 const showCompanionMenu = ref(false)
 const showBookTypeMenu = ref(false)
 const toast = ref<{ text: string; tone: 'success' | 'warning' | 'error' } | null>(null)
@@ -43,6 +48,19 @@ const bookTypeOptions: { value: BookType; label: string; hint: string }[] = [
 
 const currentBookTypeLabel = computed(() => {
   return bookTypeOptions.find((item) => item.value === readerStore.bookType)?.label || '默认'
+})
+
+const isNightLampAvailable = computed(() => {
+  return readerStore.themeStyle === 'read-theme-dark'
+})
+
+const emotionalProgressText = computed(() => {
+  if (!readerStore.book || readerStore.chapters.length === 0) return ''
+
+  const chapterBase = readerStore.currentChapterIndex / readerStore.chapters.length
+  const pageBase = (readerStore.currentPageIndex + 1) / Math.max(1, readerStore.totalPages)
+  const percent = Math.min(100, Math.max(0, (chapterBase + pageBase / readerStore.chapters.length) * 100))
+  return `你和${companionStore.currentCompanion.name}一起读了 ${percent.toFixed(1)}%`
 })
 
 function notify(text: string, tone: 'success' | 'warning' | 'error' = 'success') {
@@ -61,6 +79,35 @@ function selectBookType(type: BookType) {
 function closeFloatingMenus() {
   showCompanionMenu.value = false
   showBookTypeMenu.value = false
+}
+
+function shouldShowFirstVisitGuide(hasSavedBook = false) {
+  if (localStorage.getItem('coread_first_visit_guide_skipped') === '1') return false
+  if (companionStore.customCompanions.length > 0) return false
+  if (hasSavedBook) return false
+
+  const laterAt = Number(localStorage.getItem('coread_first_visit_guide_later_at') || 0)
+  if (!laterAt) return true
+  return Date.now() - laterAt >= 24 * 60 * 60 * 1000
+}
+
+function dismissFirstVisitGuide(skip: boolean) {
+  showFirstVisitGuide.value = false
+  if (skip) {
+    localStorage.setItem('coread_first_visit_guide_skipped', '1')
+  } else {
+    localStorage.setItem('coread_first_visit_guide_later_at', String(Date.now()))
+  }
+}
+
+function goCreateCompanionFromGuide() {
+  localStorage.setItem('coread_first_visit_guide_skipped', '1')
+  showFirstVisitGuide.value = false
+  router.push('/companions')
+}
+
+function canRenderAvatar(value: unknown) {
+  return typeof value === 'string' && value.startsWith('data:image/')
 }
 
 // 搜索结果项
@@ -130,7 +177,7 @@ function scrollToPendingQuote() {
   if (!quote) return
 
   nextTick(() => {
-    const marks = document.querySelectorAll('.user-highlight-mark, .ai-annotation-mark')
+    const marks = document.querySelectorAll('.note-highlight-mark, .quote-highlight-mark, .user-highlight-mark, .ai-annotation-mark')
     let targetElement: HTMLElement | null = null
 
     for (let i = 0; i < marks.length; i++) {
@@ -208,25 +255,15 @@ async function onHighlight(data: { text: string }) {
   notify('已添加高亮')
   selectedText.value = ''
   window.getSelection()?.removeAllRanges()
+  triggerSceneOnce('highlight', '我刚划下了这一段，轻轻回应一下。', data.text)
 }
 
 /** 划线后写随笔笔记（不触发 AI） */
 async function onNote(data: { text: string; content: string }) {
   if (!readerStore.book) return
-  const highlightId = 'hl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
-  // 同时存划线标记和笔记
-  await recordsStore.addHighlight({
-    id: highlightId,
-    bookId: readerStore.book.id,
-    chapterIndex: readerStore.currentChapterIndex,
-    pageIndex: readerStore.currentPageIndex,
-    quote: data.text,
-    createdAt: new Date().toISOString()
-  })
   await recordsStore.addNote({
     id: 'note_' + Date.now(),
     bookId: readerStore.book.id,
-    highlightId,
     chapterIndex: readerStore.currentChapterIndex,
     pageIndex: readerStore.currentPageIndex,
     quote: data.text,
@@ -355,6 +392,7 @@ async function onFileUploaded(event: Event) {
     // 初始化该书与该角色的会话列表
     chatStore.clear()
     await chatStore.loadSessions('demo', companionStore.currentCompanionId)
+    await triggerSceneOnce('start_reading', '我准备开始读这本书了，陪我进入状态。')
   } catch (err) {
     console.error('导入失败：', err)
     alert('导入失败，请检查文件格式是否正确。')
@@ -376,6 +414,19 @@ const currentPageParagraphs = computed(() => {
   if (!readerStore.currentPageContent) return []
   return readerStore.currentPageContent.split('\n').map(p => p.trim()).filter(Boolean)
 })
+
+function splitQuoteParts(quote: string) {
+  return quote.split(/\r?\n/).map(part => part.trim()).filter(Boolean)
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
+}
+
+function createQuoteRegex(quote: string) {
+  const pattern = quote.trim().split(/\s+/).map(escapeRegExp).join('\\s+')
+  return new RegExp(pattern, 'g')
+}
 
 // 解析当前聊天历史中 AI 产生的所有划线批注
 const activeAnnotations = computed(() => {
@@ -401,54 +452,52 @@ const activeAnnotations = computed(() => {
 function highlightParagraph(paraText: string) {
   let html = paraText
 
-  // 0. 收集 recordsStore 中属于当前页的高亮 & 笔记 quote
+  // Keep one mark per quote by priority to avoid nested highlight spans.
   const currentChapterIdx = readerStore.currentChapterIndex
   const currentPageIdx = readerStore.currentPageIndex
-  const currentPageRecords: { id: string; quote: string }[] = []
+  const markMap = new Map<string, { className: string; attrs: string; priority: number }>()
+
+  function addMark(quote: string, className: string, attrs: string, priority: number) {
+    if (!quote) return
+    const existing = markMap.get(quote)
+    if (!existing || priority > existing.priority) {
+      markMap.set(quote, { className, attrs, priority })
+    }
+  }
 
   recordsStore.highlights
     .filter(h => h.chapterIndex === currentChapterIdx && h.pageIndex === currentPageIdx)
-    .forEach(h => currentPageRecords.push({ id: h.id, quote: h.quote }))
+    .forEach(h => {
+      splitQuoteParts(h.quote).forEach(quote => {
+        addMark(quote, 'user-highlight-mark', `data-hl-id="${h.id}"`, 1)
+      })
+    })
 
   recordsStore.notes
     .filter(n => n.chapterIndex === currentChapterIdx && n.pageIndex === currentPageIdx && n.quote)
-    .forEach(n => currentPageRecords.push({ id: n.id, quote: n.quote! }))
+    .forEach(n => {
+      splitQuoteParts(n.quote!).forEach(quote => {
+        addMark(quote, 'note-highlight-mark', `data-note-id="${n.id}" title="${escapeHtmlAttr(n.content)}"`, 3)
+      })
+    })
 
-  // 去重（同一条 quote 可能在 highlights 和 notes 都出现）
-  const uniqueRecords = currentPageRecords.filter(
-    (r, i, arr) => arr.findIndex(x => x.quote === r.quote) === i
-  )
-
-  // 1. recordsStore 手动划线 / 笔记高亮
-  uniqueRecords.forEach(rec => {
-    if (rec.quote && html.includes(rec.quote)) {
-      const escapedText = rec.quote.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
-      const regex = new RegExp(escapedText, 'g')
-      html = html.replace(regex, `<span class="user-highlight-mark" data-hl-id="${rec.id}">${rec.quote}</span>`)
-    }
-  })
-
-  // 2. chatStore 用户划线高亮（荧光笔实线）
+  // 1. chatStore 用户划线研讨
   chatStore.messages.forEach((msg, idx) => {
     if (msg.role === 'user' && msg.quote) {
-      const lines = msg.quote.split('\n').map(l => l.trim()).filter(Boolean)
-      lines.forEach(line => {
-        if (line && html.includes(line)) {
-          const escapedText = line.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
-          const regex = new RegExp(escapedText, 'g')
-          html = html.replace(regex, `<span class="user-highlight-mark" data-msg-index="${idx}">${line}</span>`)
-        }
-      })
+      splitQuoteParts(msg.quote).forEach(line => addMark(line, 'quote-highlight-mark', `data-msg-index="${idx}"`, 2))
     }
   })
 
-  // 3. AI 批注高亮
+  // 2. AI 批注
   activeAnnotations.value.forEach(ann => {
-    if (ann.originalText && html.includes(ann.originalText)) {
-      const escapedText = ann.originalText.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
-      const regex = new RegExp(escapedText, 'g')
-      html = html.replace(regex, `<span class="ai-annotation-mark" title="${ann.comment}">${ann.originalText}</span>`)
-    }
+    addMark(ann.originalText, 'ai-annotation-mark', `title="${escapeHtmlAttr(ann.comment)}"`, 0)
+  })
+
+  // 3. 渲染标记
+  Array.from(markMap.entries()).sort((a, b) => b[0].length - a[0].length).forEach(([quote, mark]) => {
+    html = html.replace(createQuoteRegex(quote), (matchedText) => {
+      return `<span class="${mark.className}" ${mark.attrs}>${matchedText}</span>`
+    })
   })
 
   return html
@@ -518,9 +567,43 @@ const popoverStyle = computed(() => {
 })
 
 // 点击正文划线触发浮层
-function onReaderContentClick(e: MouseEvent) {
+async function onReaderContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  const userMark = target.closest('.user-highlight-mark') as HTMLElement | null
+  const noteMark = target.closest('.note-highlight-mark') as HTMLElement | null
+  const highlightMark = target.closest('.user-highlight-mark') as HTMLElement | null
+  const userMark = target.closest('.quote-highlight-mark') as HTMLElement | null
+
+  if (noteMark) {
+    const noteId = noteMark.getAttribute('data-note-id')
+    if (!noteId) return
+    const ok = await uiStore.confirm({
+      title: '取消笔记',
+      message: '确认删除这条笔记吗？原文上的笔记划线也会一起移除。',
+      confirmText: '删除笔记',
+      danger: true,
+    })
+    if (ok) {
+      await recordsStore.removeNote(noteId)
+      notify('笔记已取消')
+    }
+    return
+  }
+
+  if (highlightMark) {
+    const highlightId = highlightMark.getAttribute('data-hl-id')
+    if (!highlightId) return
+    const ok = await uiStore.confirm({
+      title: '取消划线',
+      message: '确认移除这条普通划线吗？',
+      confirmText: '移除划线',
+      danger: true,
+    })
+    if (ok) {
+      await recordsStore.removeHighlight(highlightId)
+      notify('划线已取消')
+    }
+    return
+  }
   
   if (userMark) {
     const msgIndexStr = userMark.getAttribute('data-msg-index')
@@ -575,8 +658,84 @@ async function sendFollowUp() {
   )
 }
 
+async function triggerSceneOnce(
+  scene: ChatScene,
+  message: string,
+  quoteText = '',
+  oncePerBook = true,
+  contextText = readerStore.currentPageContent || '',
+  chapterText = ''
+) {
+  if (!readerStore.book || sceneTriggerInFlight.value || chatStore.isStreaming) return
+
+  const dateKey = new Date().toISOString().slice(0, 10)
+  const scope = oncePerBook ? readerStore.book.id : 'global'
+  const storageKey = `coread_scene_${scene}_${scope}_${companionStore.currentCompanionId}_${dateKey}`
+  if (localStorage.getItem(storageKey) === '1') return
+
+  sceneTriggerInFlight.value = true
+  showChatDrawer.value = true
+
+  try {
+    const ok = await chatStore.streamResponse(
+      message,
+      quoteText,
+      contextText,
+      chapterText,
+      readerStore.book.id,
+      companionStore.currentCompanionId,
+      readerStore.currentChapterIndex + 1,
+      { scene }
+    )
+    if (ok) {
+      localStorage.setItem(storageKey, '1')
+    }
+  } finally {
+    sceneTriggerInFlight.value = false
+  }
+}
+
+async function removeQuoteDiscussionMark() {
+  const session = chatStore.currentSession
+  const baseUserMsg = session?.messages[popoverMessageIndex.value]
+  const targetQuote = baseUserMsg?.quote || ''
+  if (!session || !targetQuote) return
+  const targetMsg = baseUserMsg!
+
+  const ok = await uiStore.confirm({
+    title: '取消研讨划线',
+    message: '确认移除这条对话研讨划线吗？聊天文字会保留，对应共读片段记录会删除。',
+    confirmText: '移除研讨划线',
+    danger: true,
+  })
+  if (!ok) return
+
+  targetMsg.quote = ''
+
+  const relatedFragments = recordsStore.aiFragments.filter(
+    (item) =>
+      item.sessionId === session.id &&
+      item.quote === targetQuote &&
+      item.chapterIndex === targetMsg.chapterIndex &&
+      item.pageIndex === targetMsg.pageIndex
+  )
+  await Promise.all(relatedFragments.map((item) => recordsStore.removeAiFragment(item.id)))
+
+  showQuotePopover.value = false
+  popoverMessageIndex.value = -1
+  notify('研讨划线已取消')
+}
+
 function cleanContent(content: string) {
   return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
+}
+
+function escapeHtmlAttr(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 // 监听追问会话增长，自动滚动
@@ -595,7 +754,7 @@ watch(
 // ── 监听进度变化并自动保存 ──
 watch(
   [() => readerStore.currentChapterIndex, () => readerStore.currentPageIndex],
-  async ([newChapter, newPage]) => {
+  async ([newChapter, newPage], [oldChapter]) => {
     if (readerStore.book) {
       const now = Date.now()
       const pageTurnInterval = now - lastPageTurnAt.value
@@ -607,7 +766,21 @@ watch(
         updatedAt: new Date().toISOString(),
       })
       scrollToPendingQuote()
+      if (suppressSceneTriggers.value) return
       maybeTriggerNightReminder(pageTurnInterval)
+      if (newChapter > oldChapter && newPage === 0 && oldChapter >= 0) {
+        const previousChapter = readerStore.chapters[oldChapter]
+        triggerSceneOnce(
+          'chapter_finished',
+          '我刚读完了一章，陪我轻轻收一下这一章的感觉。',
+          '',
+          true,
+          previousChapter?.title || ''
+        )
+      }
+      if (readerStore.getDailyReadMinutes() >= 20) {
+        triggerSceneOnce('reading_streak', '我已经连续读了一会儿了，给我一点继续读下去的陪伴感。')
+      }
     }
   }
 )
@@ -669,6 +842,14 @@ function handleCompanionSwitch(id: string) {
   showCompanionMenu.value = false
 }
 
+function handleNextPage() {
+  readerStore.nextPage()
+}
+
+function handlePrevPage() {
+  readerStore.prevPage()
+}
+
 // ── 视口改变与侧边栏折叠监听 ──
 const handleResize = () => {
   readerStore.updateViewport(window.innerWidth, window.innerHeight, showChatDrawer.value)
@@ -684,8 +865,8 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault()
-    if (e.key === 'ArrowRight') readerStore.nextPage()
-    else readerStore.prevPage()
+    if (e.key === 'ArrowRight') handleNextPage()
+    else handlePrevPage()
   }
 }
 
@@ -710,6 +891,7 @@ onMounted(async () => {
 
   const savedBookText = await loadBook('demo')
   if (savedBookText) {
+    suppressSceneTriggers.value = true
     const parsed = parseTxt('测试书籍.txt', savedBookText)
     readerStore.setBook('demo', parsed.title, parsed.chapters)
     
@@ -721,7 +903,10 @@ onMounted(async () => {
     
     // 载入当前书籍与角色的会话列表
     await chatStore.loadSessions('demo', companionStore.currentCompanionId)
+    await nextTick()
+    suppressSceneTriggers.value = false
   }
+  showFirstVisitGuide.value = shouldShowFirstVisitGuide(Boolean(savedBookText))
 })
 </script>
 
@@ -737,12 +922,58 @@ onMounted(async () => {
       </div>
     </Transition>
 
+    <Transition name="modal-fade">
+      <div v-if="showFirstVisitGuide" class="fixed inset-0 z-[90] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-stone-900/55 backdrop-blur-sm" @click="dismissFirstVisitGuide(false)"></div>
+        <div class="relative w-full max-w-[520px] rounded-2xl border theme-border bg-[var(--color-read-bg)]/95 shadow-2xl overflow-hidden">
+          <header class="px-5 py-4 border-b theme-border bg-stone-500/5">
+            <h2 class="text-base font-bold text-[var(--color-read-title)]">先创建一个共读角色</h2>
+            <p class="text-xs text-stone-400 mt-1">名称 → 性格 → 语言风格 → 关系 → 头像 → 预览 → 保存。</p>
+          </header>
+          <div class="p-5 space-y-3 text-sm text-[var(--color-read-text)]">
+            <p class="leading-relaxed opacity-80">
+              角色创建会引导你把伴侣写成稳定的人格卡。你也可以先用内置模板开始读，之后再回来编辑自己的角色。
+            </p>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-xl border theme-border bg-stone-500/5 p-3">自由文本填写人设</div>
+              <div class="rounded-xl border theme-border bg-stone-500/5 p-3">本地头像圆形裁剪</div>
+              <div class="rounded-xl border theme-border bg-stone-500/5 p-3">模板可查看编辑</div>
+              <div class="rounded-xl border theme-border bg-stone-500/5 p-3">支持 JSON 导入导出</div>
+            </div>
+          </div>
+          <footer class="px-5 py-4 border-t theme-border bg-stone-500/5 flex items-center justify-end gap-2">
+            <button
+              class="px-4 py-2 rounded-xl text-xs border theme-border bg-transparent hover:bg-stone-500/10 transition-colors"
+              @click="dismissFirstVisitGuide(false)"
+            >
+              之后再看
+            </button>
+            <button
+              class="px-4 py-2 rounded-xl text-xs border theme-border bg-transparent hover:bg-stone-500/10 transition-colors"
+              @click="dismissFirstVisitGuide(true)"
+            >
+              Skip
+            </button>
+            <button
+              class="px-4 py-2 rounded-xl text-xs font-bold text-white theme-bg-primary theme-bg-primary-hover transition-colors"
+              @click="goCreateCompanionFromGuide"
+            >
+              去创建角色
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Header 头部栏 -->
     <header class="border-b theme-border px-6 py-4 flex items-center justify-between bg-[var(--color-bg-app)] shrink-0 z-[70]">
       <div class="flex items-center gap-4">
-        <h1 class="text-xl font-bold tracking-wide theme-text-app">AI 共读</h1>
+        <h1 class="text-xl font-bold tracking-wide theme-text-app">CoRead</h1>
         <div v-if="readerStore.book" class="text-sm theme-text-app opacity-70 font-sans">
           正在共读：《{{ readerStore.book.title }}》
+        </div>
+        <div v-if="readerStore.book" class="text-xs theme-text-app opacity-60 font-sans rounded-full border theme-border px-3 py-1 bg-stone-500/5">
+          {{ emotionalProgressText }}
         </div>
       </div>
 
@@ -784,10 +1015,12 @@ onMounted(async () => {
             :class="{ 'opacity-50 cursor-not-allowed': chatStore.isStreaming }"
             @click="showCompanionMenu = !showCompanionMenu; showBookTypeMenu = false"
           >
-            <span 
-              class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
+            <span
+              class="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center shrink-0 shadow-inner overflow-hidden text-[8px] text-white"
               :style="{ background: `linear-gradient(135deg, ${companionStore.currentCompanion.accentStart}, ${companionStore.currentCompanion.accentEnd})` }"
-            ></span>
+            >
+              <img v-if="canRenderAvatar(companionStore.currentCompanion.avatar)" :src="companionStore.currentCompanion.avatar" :alt="companionStore.currentCompanion.name" class="w-full h-full object-cover" />
+            </span>
             <span class="theme-text-app">{{ companionStore.currentCompanion.name }}</span>
             <ArrowDown class="w-3 h-3 text-stone-400" />
           </button>
@@ -804,10 +1037,12 @@ onMounted(async () => {
                 :class="companionStore.currentCompanionId === c.id ? 'theme-bg-primary-light text-[var(--color-primary)]' : 'hover:bg-stone-500/10 theme-text-card'"
                 @click="handleCompanionSwitch(c.id)"
               >
-                <span 
-                  class="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-inner" 
+                <span
+                  class="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center shrink-0 shadow-inner overflow-hidden text-[8px] text-white"
                   :style="{ background: `linear-gradient(135deg, ${c.accentStart}, ${c.accentEnd})` }"
-                ></span>
+                >
+                  <img v-if="canRenderAvatar(c.avatar)" :src="c.avatar" :alt="c.name" class="w-full h-full object-cover" />
+                </span>
                 <span class="min-w-0 flex-1">
                   <span class="block text-xs truncate font-bold">{{ c.name }}</span>
                   <span class="block text-[9px] text-stone-400 truncate mt-0.5">{{ c.title }}</span>
@@ -848,6 +1083,29 @@ onMounted(async () => {
     <main class="flex-1 min-h-0 flex overflow-hidden">
       <!-- 左侧阅读器视口 -->
       <section class="flex-1 min-w-0 flex flex-col justify-between p-6 overflow-hidden relative transition-colors duration-300">
+        <Transition name="lamp-glow">
+          <div
+            v-if="readerStore.book && isNightLampAvailable && readerStore.isNightLampOn"
+            class="night-lamp-beam"
+          ></div>
+        </Transition>
+
+        <button
+          v-if="readerStore.book && isNightLampAvailable"
+          class="night-lamp-switch"
+          :class="{ 'night-lamp-active': readerStore.isNightLampOn }"
+          :title="readerStore.isNightLampOn ? '关闭小夜灯' : '打开小夜灯'"
+          :aria-pressed="readerStore.isNightLampOn"
+          aria-label="小夜灯"
+          @click="readerStore.setNightLampOn(!readerStore.isNightLampOn)"
+        >
+          <span class="lamp-base"></span>
+          <span class="lamp-cord"></span>
+          <span class="lamp-shade">
+            <span class="lamp-bulb"></span>
+          </span>
+          <span class="pull-cord"></span>
+        </button>
         
         <!-- 右侧浮出的目录卡片 -->
         <Transition name="fade-scale">
@@ -905,7 +1163,7 @@ onMounted(async () => {
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <h3 class="text-lg font-bold text-[var(--color-read-title)]">开始你的 AI 共读之旅</h3>
+          <h3 class="text-lg font-bold text-[var(--color-read-title)]">开始你的 CoRead 之旅</h3>
           <p class="text-sm text-[var(--color-read-text)] opacity-70 max-w-sm">
             导入一份 TXT 小说，与你选择的伴侣一起沉浸式共读，他会在阅读过程中为你提供温暖的对话与情绪价值。
           </p>
@@ -1014,7 +1272,7 @@ onMounted(async () => {
             <button
               class="px-4 py-1.5 border theme-border rounded-full hover:bg-stone-500/10 theme-text-card disabled:opacity-30 disabled:pointer-events-none transition-colors"
               :disabled="readerStore.currentChapterIndex === 0 && readerStore.currentPageIndex === 0"
-              @click="readerStore.prevPage()"
+              @click="handlePrevPage"
             >
               上一页
             </button>
@@ -1024,7 +1282,7 @@ onMounted(async () => {
             <button
               class="px-4 py-1.5 border theme-border rounded-full hover:bg-stone-500/10 theme-text-card disabled:opacity-30 disabled:pointer-events-none transition-colors"
               :disabled="readerStore.currentChapterIndex === readerStore.chapters.length - 1 && readerStore.currentPageIndex === readerStore.totalPages - 1"
-              @click="readerStore.nextPage()"
+              @click="handleNextPage"
             >
               下一页
             </button>
@@ -1064,6 +1322,12 @@ onMounted(async () => {
           <div class="flex items-center gap-1.5">
             <span class="text-xs font-bold theme-text-primary">与 {{ companionStore.currentCompanion.name }} 研讨中</span>
           </div>
+          <button
+            @click="removeQuoteDiscussionMark"
+            class="ml-auto mr-2 px-2 py-1 rounded-lg border border-red-500/20 bg-red-500/5 text-[10px] font-bold text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+          >
+            取消划线
+          </button>
           <button
             @click="showQuotePopover = false"
             class="text-stone-400 hover:text-stone-600 transition-colors px-1 text-xs cursor-pointer"
@@ -1218,5 +1482,119 @@ onMounted(async () => {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.lamp-glow-enter-active,
+.lamp-glow-leave-active {
+  transition: opacity 0.7s ease;
+}
+
+.lamp-glow-enter-from,
+.lamp-glow-leave-to {
+  opacity: 0;
+}
+
+.night-lamp-beam {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: min(840px, 68vw);
+  height: min(680px, 76vh);
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 7% 11%, rgba(255, 232, 158, 0.2) 0%, rgba(255, 213, 116, 0.14) 18%, rgba(255, 210, 112, 0.06) 42%, transparent 70%),
+    radial-gradient(ellipse at 14% 20%, rgba(255, 205, 99, 0.12) 0%, transparent 58%);
+  filter: blur(2px);
+  mix-blend-mode: screen;
+}
+
+.night-lamp-switch {
+  position: absolute;
+  left: 28px;
+  top: 0;
+  z-index: 30;
+  width: 56px;
+  height: 148px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+}
+
+.lamp-base {
+  width: 34px;
+  height: 12px;
+  border-radius: 0 0 16px 16px;
+  background: #3f3f46;
+  box-shadow: inset 0 -2px 5px rgba(0, 0, 0, 0.45);
+}
+
+.lamp-cord {
+  width: 2px;
+  height: 58px;
+  background: #34343a;
+}
+
+.lamp-shade {
+  position: relative;
+  width: 46px;
+  height: 30px;
+  border-radius: 22px 22px 6px 6px;
+  background: #3a3a40;
+  box-shadow: inset 0 -3px 8px rgba(0, 0, 0, 0.22), 0 3px 8px rgba(0, 0, 0, 0.32);
+}
+
+.lamp-bulb {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #807b68;
+  transform: translateX(-50%);
+  transition: background-color 0.45s ease, box-shadow 0.45s ease;
+}
+
+.pull-cord {
+  position: relative;
+  width: 2px;
+  height: 32px;
+  margin-top: 3px;
+  background: #77747a;
+  transition: transform 0.18s ease;
+}
+
+.pull-cord::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  bottom: -7px;
+  width: 8px;
+  height: 12px;
+  border-radius: 4px;
+  background: #b9473f;
+  box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.32);
+}
+
+.night-lamp-switch:hover .pull-cord {
+  transform: scaleY(1.08);
+}
+
+.night-lamp-switch:active .pull-cord {
+  transform: translateY(12px);
+}
+
+.night-lamp-active .lamp-shade {
+  background: #434042;
+}
+
+.night-lamp-active .lamp-bulb {
+  background: #ffd96d;
+  box-shadow: 0 0 18px 7px rgba(255, 217, 109, 0.42), 0 0 44px 16px rgba(255, 199, 79, 0.18);
 }
 </style>

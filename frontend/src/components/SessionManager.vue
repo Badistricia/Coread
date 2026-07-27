@@ -25,6 +25,10 @@ const companionStore = useCompanionStore()
 const uiStore = useUiStore()
 const showMenu = ref(false)
 
+function canRenderAvatar(value: unknown) {
+  return typeof value === 'string' && value.startsWith('data:image/')
+}
+
 const currentSession = computed(() => {
   return props.sessions.find(s => s.id === props.currentSessionId) || props.sessions[0]
 })
@@ -81,10 +85,11 @@ function runMenuAction(action: 'create' | 'rename' | 'clear') {
     <!-- 伴侣头像与身份标题 -->
     <div class="flex items-center gap-2.5 min-w-0 flex-1">
       <div 
-        class="w-8 h-8 rounded-full text-white flex items-center justify-center text-xs font-bold shadow-inner shrink-0"
+        class="w-8 h-8 rounded-full text-white flex items-center justify-center text-xs font-bold shadow-inner shrink-0 overflow-hidden"
         :style="{ background: `linear-gradient(135deg, ${companionStore.currentCompanion.accentStart}, ${companionStore.currentCompanion.accentEnd})` }"
       >
-        {{ companionStore.currentCompanion.name[0] }}
+        <img v-if="canRenderAvatar(companionStore.currentCompanion.avatar)" :src="companionStore.currentCompanion.avatar" :alt="companionStore.currentCompanion.name" class="w-full h-full object-cover" />
+        <span v-else>{{ companionStore.currentCompanion.name[0] }}</span>
       </div>
       <div class="min-w-0">
         <h4 class="text-xs font-bold theme-text-app truncate">{{ companionStore.currentCompanion.name }}</h4>
