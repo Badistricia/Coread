@@ -61,7 +61,7 @@ async function confirmDelete() {
       <!-- 划线原文引用 -->
       <div 
         v-if="quote" 
-        class="mt-2 pl-2.5 border-l-2 border-[var(--color-primary)] text-xs text-[var(--color-read-text)] italic bg-black/5 p-1.5 rounded truncate"
+        class="mt-2 pl-2.5 border-l-2 border-[var(--color-primary)] text-xs text-[var(--color-read-text)] italic bg-stone-500/10 p-1.5 rounded truncate"
       >
         “{{ quote }}”
       </div>

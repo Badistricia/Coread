@@ -171,7 +171,7 @@ function cleanContent(content: string) {
           <!-- 引用原文卡片 -->
           <div
             v-if="msg.role === 'user' && msg.quote"
-            class="mb-1.5 p-2 rounded-lg bg-black/5 border-l-2 border-[var(--color-primary)] text-[10px] leading-relaxed opacity-75 italic text-stone-700 select-none"
+            class="mb-1.5 p-2 rounded-lg bg-stone-500/10 border-l-2 border-[var(--color-primary)] text-[10px] leading-relaxed italic text-[var(--color-read-text)] select-none"
           >
             “{{ msg.quote }}”
           </div>
