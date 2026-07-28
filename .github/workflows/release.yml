@@ -1,0 +1,145 @@
+name: Build & Release
+
+# Trigger on any tag that starts with "v" (e.g. v1.0.0)
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Allow the workflow to create/update releases
+permissions:
+  contents: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Windows — PyInstaller + Inno Setup → CoRead-Setup-vX.Y.Z.exe
+  # ──────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 1. Build the Vue frontend into static files
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      # 2. Install Python dependencies + PyInstaller
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # 3. Bundle everything into a self-contained directory via PyInstaller
+      - name: Build with PyInstaller
+        run: |
+          cd backend
+          pyinstaller coread.spec --noconfirm
+
+      # 4. Install Inno Setup (available via Chocolatey on windows-latest)
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # 5. Compile the Windows installer; inject the tag as the version number
+      - name: Build Windows Installer
+        run: |
+          $tag = "${{ github.ref_name }}"
+          iscc "/DAppVersion=$tag" "installer\windows\setup.iss"
+
+      # 6. Upload the produced installer to the GitHub Release
+      - name: Upload Windows Installer to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/windows/dist/CoRead-Setup-*.exe
+
+  # ──────────────────────────────────────────────────────────────────
+  # macOS — PyInstaller + create-dmg → CoRead-vX.Y.Z.dmg
+  # ──────────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 1. Build the Vue frontend into static files
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      # 2. Install Python dependencies + PyInstaller
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # 3. Bundle everything into a macOS .app via PyInstaller
+      - name: Build with PyInstaller
+        run: |
+          cd backend
+          pyinstaller coread.spec --noconfirm
+
+      # 4. Install create-dmg to wrap the .app in a distributable DMG
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      # 5. Create the DMG installer
+      - name: Build macOS DMG
+        run: |
+          TAG="${{ github.ref_name }}"
+          mkdir -p dist
+          create-dmg \
+            --volname "CoRead AI" \
+            --volicon "backend/dist/CoRead.app/Contents/Resources/icon-windowed.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "CoRead.app" 175 190 \
+            --hide-extension "CoRead.app" \
+            --app-drop-link 425 190 \
+            "dist/CoRead-${TAG}.dmg" \
+            "backend/dist/CoRead.app" || \
+          create-dmg \
+            --volname "CoRead AI" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "CoRead.app" 175 190 \
+            --hide-extension "CoRead.app" \
+            --app-drop-link 425 190 \
+            "dist/CoRead-${TAG}.dmg" \
+            "backend/dist/CoRead.app"
+
+      # 6. Upload the DMG to the GitHub Release
+      - name: Upload macOS DMG to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/CoRead-*.dmg
