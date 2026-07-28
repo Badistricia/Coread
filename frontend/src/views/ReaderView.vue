@@ -1167,6 +1167,7 @@ onMounted(async () => {
             v-model:showChatDrawer="showChatDrawer"
             @toggleDirectory="showDirectory = !showDirectory"
             @openStats="showStatsDialog = true"
+            @openEnvConfig="showEnvDialog = true"
           />
         </div>
 
