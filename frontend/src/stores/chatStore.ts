@@ -5,6 +5,7 @@ import { saveChatSessions, loadChatSessions } from '@/utils/storage'
 import { useReaderStore } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
+import { useEnvStore } from '@/stores/envStore'
 import type { BookType } from '@/stores/readerStore'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -249,6 +250,9 @@ export const useChatStore = defineStore('chat', () => {
           scene: options.scene || (quoteText ? 'quote' : 'general'),
           book_type: options.bookType || readerStore.bookType,
           manager_prompt: options.managerPrompt,
+          api_key: useEnvStore().apiKey || undefined,
+          base_url: useEnvStore().baseUrl || undefined,
+          model: useEnvStore().model || undefined,
         }),
         signal: abortController.signal,
       })

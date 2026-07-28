@@ -15,6 +15,7 @@ import { saveBook, loadBook, saveProgress, loadProgress } from '@/utils/storage'
 import ReaderSideToolbar from '@/components/ReaderSideToolbar.vue'
 import BookmarkRibbon from '@/components/BookmarkRibbon.vue'
 import ReadingStatsDialog from '@/components/ReadingStatsDialog.vue'
+import EnvConfigDialog from '@/components/EnvConfigDialog.vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -29,6 +30,7 @@ const isUploading = ref(false)
 const showDirectory = ref(false)
 const showChatDrawer = ref(true) // 聊天抽屉开关状态
 const showStatsDialog = ref(false) // 统计弹窗显示开关
+const showEnvDialog = ref(false) // API 环境变量弹窗显示开关
 const showSearchDialog = ref(false) // 全文搜索结果弹窗
 const showFirstVisitGuide = ref(false)
 const lastPageTurnAt = ref(Date.now())
@@ -1387,6 +1389,9 @@ onMounted(async () => {
       v-model="showStatsDialog"
       @open-chat-drawer="showChatDrawer = true"
     />
+
+    <!-- API 环境变量设置弹窗 -->
+    <EnvConfigDialog v-model:visible="showEnvDialog" />
 
     <!-- 全文搜索结果弹窗 -->
     <Transition name="modal-fade">

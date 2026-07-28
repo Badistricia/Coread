@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.prompts.prompt_manager import get_system_prompt, get_user_message
-from app.services.llm_service import stream_chat
+from app.services.llm_service import stream_chat, test_llm_connection
 
 from app.prompts.character_config import get_all_characters
 
@@ -28,6 +28,12 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class EnvConfigRequest(BaseModel):
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     message: str
     context_text: str
@@ -42,6 +48,18 @@ class ChatRequest(BaseModel):
     scene: str = ""
     book_type: str = "default"
     manager_prompt: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
+@router.post("/chat/test-config")
+async def test_config(req: EnvConfigRequest):
+    return await test_llm_connection(
+        api_key=req.api_key,
+        base_url=req.base_url,
+        model=req.model,
+    )
 
 
 @router.post("/chat")
@@ -71,10 +89,18 @@ async def chat(req: ChatRequest):
     )
 
     return StreamingResponse(
-        stream_chat(system, user, history=req.history),
+        stream_chat(
+            system,
+            user,
+            history=req.history,
+            api_key=req.api_key,
+            base_url=req.base_url,
+            model=req.model,
+        ),
         media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         },
     )
+

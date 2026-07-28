@@ -12,6 +12,7 @@ const emit = defineEmits<{
   (e: 'update:showChatDrawer', val: boolean): void
   (e: 'toggleDirectory'): void
   (e: 'openStats'): void
+  (e: 'openEnvConfig'): void
 }>()
 
 const router = useRouter()
@@ -87,6 +88,16 @@ function cycleLineHeight() {
         class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
       >
         <Notebook class="w-4.5 h-4.5 text-stone-600" />
+      </button>
+
+      <!-- API 环境变量设置按钮 -->
+      <button
+        @click="emit('openEnvConfig')"
+        title="设置 API Key / 环境变量"
+        aria-label="打开环境变量 API 设置弹窗"
+        class="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-stone-500/10 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        <Setting class="w-4.5 h-4.5 text-stone-600" />
       </button>
 
       <!-- 我的伴侣管理页面入口 -->
