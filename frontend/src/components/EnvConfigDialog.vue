@@ -1,111 +1,140 @@
 <template>
-  <Transition name="fade-scale">
-    <div v-if="visible" class="env-dialog-overlay" @click.self="handleClose">
-      <div class="env-dialog-card">
+  <Transition name="modal-fade">
+    <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-stone-900/45" @click.self="handleClose"></div>
+      <div class="relative w-full max-w-[480px] rounded-2xl border theme-border bg-[var(--color-read-bg)]/95 shadow-2xl overflow-hidden flex flex-col">
         <!-- 头部标题 -->
-        <div class="env-dialog-header">
-          <div class="header-title">
-            <span class="icon">⚙️</span>
-            <span>API 环境变量设置</span>
+        <header class="px-5 py-4 border-b theme-border bg-stone-500/5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Setting class="w-4 h-4 text-stone-500" />
+            <h3 class="text-sm font-bold text-[var(--color-read-title)]">API 环境变量设置</h3>
           </div>
-          <button class="close-btn" @click="handleClose" title="关闭">&times;</button>
-        </div>
+          <button
+            class="w-7 h-7 rounded-full hover:bg-stone-500/10 text-stone-400 hover:text-stone-600 transition-colors flex items-center justify-center"
+            @click="handleClose"
+            title="关闭"
+          >
+            <Close class="w-3.5 h-3.5" />
+          </button>
+        </header>
 
-        <!-- 提示信息 -->
-        <div class="env-tips">
-          <p>💡 <strong>优先级说明</strong>：在此配置的 API 参数保存在<strong>浏览器本地</strong>，优先级高于后端 <code>.env</code> 文件。未填写的项将自动回退使用后端默认配置。</p>
-        </div>
+        <div class="p-5 flex flex-col gap-4">
+          <!-- 提示信息 -->
+          <div class="bg-blue-500/10 border-l-2 border-blue-500 px-3 py-2.5 rounded text-xs leading-relaxed text-[var(--color-read-text)]">
+            <div class="font-bold mb-1 flex items-center gap-1">
+              <InfoFilled class="w-3.5 h-3.5 text-blue-500" />
+              优先级说明
+            </div>
+            在此配置的 API 参数保存在<strong>浏览器本地</strong>，优先级高于后端 <code class="bg-black/5 px-1 rounded text-stone-500">.env</code> 文件。未填写的项将自动回退使用后端默认配置。
+          </div>
 
-        <!-- 表单区域 -->
-        <div class="env-form">
-          <!-- API Key 输入框 -->
-          <div class="form-item">
-            <label class="form-label">
-              <span>LLM API Key</span>
-              <span class="tag-badge">密钥</span>
-            </label>
-            <div class="input-wrapper">
+          <!-- 表单区域 -->
+          <div class="flex flex-col gap-3.5">
+            <!-- API Key 输入框 -->
+            <div class="flex flex-col gap-1.5">
+              <label class="flex items-center justify-between text-xs font-bold text-[var(--color-read-text)]">
+                <span>LLM API Key</span>
+                <span class="text-[10px] font-normal text-stone-400 bg-stone-500/10 px-1.5 py-0.5 rounded">密钥</span>
+              </label>
+              <div class="relative flex items-center">
+                <input
+                  :type="showKey ? 'text' : 'password'"
+                  v-model="form.apiKey"
+                  placeholder="留空则使用后端 .env 的 LLM_API_KEY"
+                  class="w-full px-3 py-2 text-sm border theme-border rounded-lg outline-none bg-[var(--color-read-bg)] text-[var(--color-read-text)] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all pr-9"
+                />
+                <button
+                  type="button"
+                  class="absolute right-2 text-stone-400 hover:text-stone-600 transition-colors flex items-center justify-center"
+                  @click="showKey = !showKey"
+                  :title="showKey ? '隐藏' : '显示'"
+                >
+                  <Hide v-if="!showKey" class="w-4 h-4" />
+                  <View v-else class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Base URL 输入框 -->
+            <div class="flex flex-col gap-1.5">
+              <label class="flex items-center justify-between text-xs font-bold text-[var(--color-read-text)]">
+                <span>API Base URL</span>
+                <span class="text-[10px] font-normal text-stone-400 bg-stone-500/10 px-1.5 py-0.5 rounded">接口地址</span>
+              </label>
               <input
-                :type="showKey ? 'text' : 'password'"
-                v-model="form.apiKey"
-                placeholder="留空则使用后端 .env 的 LLM_API_KEY"
-                class="env-input"
+                type="text"
+                v-model="form.baseUrl"
+                placeholder="例如 https://dashscope.aliyuncs.com/compatible-mode/v1"
+                class="w-full px-3 py-2 text-sm border theme-border rounded-lg outline-none bg-[var(--color-read-bg)] text-[var(--color-read-text)] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all"
               />
-              <button
-                type="button"
-                class="toggle-eye"
-                @click="showKey = !showKey"
-                :title="showKey ? '隐藏' : '显示'"
-              >
-                {{ showKey ? '🙈' : '👁️' }}
-              </button>
+            </div>
+
+            <!-- Model 名称输入框 -->
+            <div class="flex flex-col gap-1.5">
+              <label class="flex items-center justify-between text-xs font-bold text-[var(--color-read-text)]">
+                <span>LLM Model 名称</span>
+                <span class="text-[10px] font-normal text-stone-400 bg-stone-500/10 px-1.5 py-0.5 rounded">模型</span>
+              </label>
+              <input
+                type="text"
+                v-model="form.model"
+                placeholder="例如 qwen-plus, gpt-4o 等"
+                class="w-full px-3 py-2 text-sm border theme-border rounded-lg outline-none bg-[var(--color-read-bg)] text-[var(--color-read-text)] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all"
+              />
             </div>
           </div>
 
-          <!-- Base URL 输入框 -->
-          <div class="form-item">
-            <label class="form-label">
-              <span>API Base URL</span>
-              <span class="tag-badge">接口地址</span>
-            </label>
-            <input
-              type="text"
-              v-model="form.baseUrl"
-              placeholder="例如 https://dashscope.aliyuncs.com/compatible-mode/v1"
-              class="env-input"
-            />
-          </div>
-
-          <!-- Model 名称输入框 -->
-          <div class="form-item">
-            <label class="form-label">
-              <span>LLM Model 名称</span>
-              <span class="tag-badge">模型</span>
-            </label>
-            <input
-              type="text"
-              v-model="form.model"
-              placeholder="例如 qwen-plus, gpt-4o 等"
-              class="env-input"
-            />
-          </div>
-        </div>
-
-        <!-- 测试结果提示 -->
-        <Transition name="fade">
-          <div
-            v-if="testResult.status"
-            :class="['test-feedback', testResult.status === 'success' ? 'is-success' : 'is-error']"
-          >
-            <span class="feedback-icon">{{ testResult.status === 'success' ? '✅' : '❌' }}</span>
-            <span class="feedback-msg">{{ testResult.message }}</span>
-          </div>
-        </Transition>
-
-        <!-- 底部按钮操作区 -->
-        <div class="env-dialog-footer">
-          <div class="left-actions">
-            <button
-              type="button"
-              class="btn-secondary btn-test"
-              :disabled="isTesting"
-              @click="handleTestConnection"
+          <!-- 测试结果提示 -->
+          <Transition name="fade">
+            <div
+              v-if="testResult.status"
+              class="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs leading-relaxed border"
+              :class="testResult.status === 'success' ? 'bg-green-500/10 text-green-700 border-green-500/20' : 'bg-red-500/10 text-red-700 border-red-500/20'"
             >
-              <span v-if="isTesting" class="spinner">⏳</span>
-              <span v-else>🧪 测试连接</span>
-            </button>
-            <button
-              type="button"
-              class="btn-text-danger"
-              @click="handleReset"
-              title="清空浏览器端设置，恢复使用后端 .env"
-            >
-              重置
-            </button>
-          </div>
-          <div class="right-actions">
-            <button type="button" class="btn-secondary" @click="handleClose">取消</button>
-            <button type="button" class="btn-primary" @click="handleSave">确定</button>
+              <Check v-if="testResult.status === 'success'" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <Warning v-else class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>{{ testResult.message }}</span>
+            </div>
+          </Transition>
+
+          <!-- 底部按钮操作区 -->
+          <div class="flex items-center justify-between pt-2">
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold border theme-border bg-stone-100/50 text-[var(--color-read-text)] hover:bg-stone-200/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                :disabled="isTesting"
+                @click="handleTestConnection"
+              >
+                <Loading v-if="isTesting" class="w-3.5 h-3.5 animate-spin" />
+                <Connection v-else class="w-3.5 h-3.5 text-stone-500" />
+                <span>{{ isTesting ? '测试中...' : '测试连接' }}</span>
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1.5 rounded text-xs text-red-500 hover:bg-red-500/10 transition-colors"
+                @click="handleReset"
+                title="清空浏览器端设置，恢复使用后端 .env"
+              >
+                重置
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold border theme-border bg-stone-100/50 text-[var(--color-read-text)] hover:bg-stone-200/50 transition-colors"
+                @click="handleClose"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                @click="handleSave"
+              >
+                确定
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -225,239 +254,14 @@ async function handleTestConnection() {
 </script>
 
 <style scoped>
-.env-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.18s ease;
 }
 
-.env-dialog-card {
-  width: 90%;
-  max-width: 480px;
-  background: var(--bg-card, #ffffff);
-  color: var(--text-color, #2c3e50);
-  border-radius: 14px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.env-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  color: #888;
-  cursor: pointer;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  color: #333;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.env-tips {
-  background: rgba(64, 158, 255, 0.08);
-  border-left: 4px solid var(--theme-color, #409eff);
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
-
-.env-tips code {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-family: monospace;
-}
-
-.env-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.tag-badge {
-  font-size: 0.72rem;
-  font-weight: normal;
-  color: #888;
-  background: rgba(0, 0, 0, 0.04);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.env-input {
-  width: 100%;
-  padding: 9px 12px;
-  font-size: 0.9rem;
-  border: 1px solid var(--border-color, #dcdfe6);
-  border-radius: 8px;
-  outline: none;
-  background: var(--bg-primary, #f9fafb);
-  color: inherit;
-  transition: border-color 0.2s;
-}
-
-.input-wrapper .env-input {
-  padding-right: 40px;
-}
-
-.env-input:focus {
-  border-color: var(--theme-color, #409eff);
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15);
-}
-
-.toggle-eye {
-  position: absolute;
-  right: 8px;
-  background: none;
-  border: none;
-  font-size: 1rem;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.test-feedback {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.test-feedback.is-success {
-  background: rgba(103, 194, 58, 0.1);
-  color: #277700;
-  border: 1px solid rgba(103, 194, 58, 0.2);
-}
-
-.test-feedback.is-error {
-  background: rgba(245, 108, 108, 0.1);
-  color: #c42b2b;
-  border: 1px solid rgba(245, 108, 108, 0.2);
-}
-
-.env-dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
-
-}
-
-.left-actions,
-.right-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.btn-primary {
-  background: var(--theme-color, #409eff);
-  color: #fff;
-  border: none;
-  padding: 8px 18px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-}
-
-.btn-secondary {
-  background: rgba(0, 0, 0, 0.05);
-  color: inherit;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-text-danger {
-  background: none;
-  border: none;
-  color: #f56c6c;
-  font-size: 0.85rem;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-}
-
-.btn-text-danger:hover {
-  background: rgba(245, 108, 108, 0.1);
-}
-
-/* 动效 */
-.fade-scale-enter-active,
-.fade-scale-leave-active {
-  transition: all 0.25s ease;
-}
-
-.fade-scale-enter-from,
-.fade-scale-leave-to {
+.modal-fade-enter-from,
+.modal-fade-leave-to {
   opacity: 0;
-  transform: scale(0.96);
 }
 
 .fade-enter-active,
