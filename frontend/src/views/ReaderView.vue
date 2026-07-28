@@ -1078,6 +1078,17 @@ onMounted(async () => {
         >
           {{ isUploading ? '读取中...' : '换本书' }}
         </button>
+
+        <!-- API 环境变量设置按钮 -->
+        <button
+          @click="showEnvDialog = true"
+          title="设置 API Key / 环境变量"
+          aria-label="打开 API Key 环境变量设置弹窗"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border theme-header-btn transition-colors duration-300 cursor-pointer"
+        >
+          <Setting class="w-3.5 h-3.5 text-stone-600" />
+          <span>API设置</span>
+        </button>
       </div>
     </header>
 

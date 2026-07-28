@@ -5,11 +5,14 @@ import { useCompanionStore } from '@/stores/companionStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import type { Companion } from '@/repositories/types'
+import EnvConfigDialog from '@/components/EnvConfigDialog.vue'
 
 const router = useRouter()
 const companionStore = useCompanionStore()
 const chatStore = useChatStore()
 const uiStore = useUiStore()
+
+const showEnvDialog = ref(false)
 
 const showEditDialog = ref(false)
 const isEditMode = ref(false)
@@ -400,6 +403,13 @@ onUnmounted(() => {
         >
           <Download class="w-3.5 h-3.5" />
           导出自定义
+        </button>
+        <button
+          class="px-3 py-1.5 rounded-full text-xs font-semibold border theme-border bg-transparent hover:bg-stone-500/10 transition-colors flex items-center gap-1.5 cursor-pointer"
+          @click="showEnvDialog = true"
+        >
+          <Setting class="w-3.5 h-3.5 text-stone-600" />
+          API设置
         </button>
       </div>
     </header>
@@ -849,6 +859,9 @@ onUnmounted(() => {
         </Transition>
       </div>
     </Transition>
+
+    <!-- API 环境变量设置弹窗 -->
+    <EnvConfigDialog v-model:visible="showEnvDialog" />
   </div>
 </template>
 
