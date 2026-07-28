@@ -77,13 +77,14 @@ self-coread/
 本项目由**前端**与**后端**两部分组成，需要安装以下两个软件（均为免费开源软件）：
 
 * **① 安装 Node.js (前端运行环境)**
-  * **下载**：进入 [Node.js 官网 (nodejs.org)](https://nodejs.org/) 下载 **LTS (长期支持版)**。
-  * **安装**：双击下载的安装包（Windows 为 `.msi`，macOS 为 `.pkg`），一路点击“下一步 (Next)”即可。
-  * **说明**：现在的 Node.js 安装包会**自动配置环境变量**，安装完成后无需手动进行额外环境变量设置。
+  * **版本要求**：**>= 18.0.0** (推荐 18.x / 20.x / 22.x LTS 版本)
+  * **官网下载**：[https://nodejs.org/](https://nodejs.org/)（进入后点击页面上的 LTS 按钮下载）
+  * **安装说明**：双击下载的安装包（Windows 为 `.msi`，macOS 为 `.pkg`），一路点击“下一步 (Next)”即可。安装包会自动配置环境变量。
 
 * **② 安装 Python (后端运行环境)**
-  * **下载**：进入 [Python 官网 (python.org)](https://www.python.org/downloads/) 下载 Python 3.10 或更高的最新版本。
-  * **安装 (⚠️ 极其关键)**：
+  * **版本要求**：**>= 3.10.0** (推荐 3.10 / 3.11 / 3.12)
+  * **官网下载**：[https://www.python.org/downloads/](https://www.python.org/downloads/)
+  * **安装说明 (⚠️ 极其关键)**：
     * **Windows 用户**：在打开安装界面的第一步，**务必勾选最下方的 `"Add python.exe to PATH"`（将 Python 添加到环境变量）**，然后再点击 "Install Now"。
     * **macOS 用户**：直接双击 `.pkg` 按提示安装；或者打开终端运行 `brew install python`。
 
