@@ -203,6 +203,10 @@ export const useReaderStore = defineStore('reader', () => {
     localStorage.setItem('coread_night_lamp_on', String(val))
   }
 
+  function toggleNightLamp() {
+    setNightLampOn(!isNightLampOn.value)
+  }
+
   function resetReadingTimer() {
     readingStartTime.value = Date.now()
   }
@@ -270,6 +274,7 @@ export const useReaderStore = defineStore('reader', () => {
     changeFontSize,
     setThemeStyle,
     setNightLampOn,
+    toggleNightLamp,
     resetReadingTimer,
     setDoublePage,
     setLineHeight,

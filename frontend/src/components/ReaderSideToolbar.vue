@@ -24,6 +24,18 @@ const exclusiveThemeStyle = computed(() => {
   return { background: `linear-gradient(135deg, ${accentStart}, ${accentEnd})` }
 })
 
+const exclusiveThemeTitle = computed(() => {
+  if (companionStore.currentCompanion.isCustom) return '自定义角色专属主题'
+  const titles: Record<string, string> = {
+    luchen: '陆沉专属 · 幻惑之瞳',
+    xiaoyi: '萧逸专属 · 极速之耀',
+    qisili: '齐司礼专属 · 昙花之息',
+    chalisu: '查理苏专属 · 真空之耀',
+    xiamingxing: '夏鸣星专属 · 璨若骄阳',
+  }
+  return titles[companionStore.currentCompanionId] || '角色专属主题'
+})
+
 // 循环调节行间距 1.4 -> 1.6 -> 1.8 -> 2.0 -> 2.2 -> 1.4
 function cycleLineHeight() {
   const current = readerStore.lineHeight
@@ -158,7 +170,7 @@ function cycleLineHeight() {
           class="w-5.5 h-5.5 rounded-full border border-stone-300 cursor-pointer hover:scale-110 transition-transform shadow-xs"
           :style="exclusiveThemeStyle"
           :class="{ 'ring-2 ring-offset-1 ring-[var(--color-primary)]': readerStore.themeStyle === 'read-theme-exclusive' }"
-          :title="companionStore.currentCompanion.isCustom ? '自定义角色专属主题' : (companionStore.currentCompanionId === 'luchen' ? '陆沉专属 · 幻惑之瞳' : '萧逸专属 · 极速之耀')"
+          :title="exclusiveThemeTitle"
         ></button>
       </div>
     </div>

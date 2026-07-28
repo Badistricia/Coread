@@ -1097,7 +1097,8 @@ onMounted(async () => {
           :title="readerStore.isNightLampOn ? '关闭小夜灯' : '打开小夜灯'"
           :aria-pressed="readerStore.isNightLampOn"
           aria-label="小夜灯"
-          @click="readerStore.setNightLampOn(!readerStore.isNightLampOn)"
+          type="button"
+          @click.stop="readerStore.toggleNightLamp"
         >
           <span class="lamp-base"></span>
           <span class="lamp-cord"></span>
@@ -1205,7 +1206,7 @@ onMounted(async () => {
         <!-- 小说展示区 (微信读书风格独立大书卡纸张) -->
         <div
           v-else
-          class="flex-1 max-w-7xl mx-auto w-full theme-bg-card theme-text-card rounded-2xl shadow-lg border theme-border flex flex-col justify-between px-10 py-8 my-3 relative transition-all duration-300 min-h-0"
+          class="flex-1 max-w-7xl mx-auto w-full theme-bg-card theme-text-card rounded-2xl shadow-lg border theme-border flex flex-col justify-between px-10 py-8 my-3 relative z-[2] transition-all duration-300 min-h-0"
         >
           <!-- 下落式书签 (独立小组件) -->
           <BookmarkRibbon
@@ -1484,9 +1485,12 @@ onMounted(async () => {
   opacity: 0;
 }
 
-.lamp-glow-enter-active,
+.lamp-glow-enter-active {
+  transition: opacity 0.45s ease;
+}
+
 .lamp-glow-leave-active {
-  transition: opacity 0.7s ease;
+  transition: opacity 0.12s ease-out;
 }
 
 .lamp-glow-enter-from,
@@ -1499,14 +1503,15 @@ onMounted(async () => {
   left: 0;
   top: 0;
   z-index: 1;
-  width: min(840px, 68vw);
-  height: min(680px, 76vh);
+  width: min(420px, 42vw);
+  height: min(360px, 42vh);
   pointer-events: none;
+  opacity: 0.95;
   background:
-    radial-gradient(circle at 7% 11%, rgba(255, 232, 158, 0.2) 0%, rgba(255, 213, 116, 0.14) 18%, rgba(255, 210, 112, 0.06) 42%, transparent 70%),
-    radial-gradient(ellipse at 14% 20%, rgba(255, 205, 99, 0.12) 0%, transparent 58%);
-  filter: blur(2px);
-  mix-blend-mode: screen;
+    radial-gradient(circle at 10% 18%, rgba(255, 232, 158, 0.28) 0%, rgba(255, 213, 116, 0.16) 24%, rgba(255, 210, 112, 0.06) 48%, transparent 72%),
+    radial-gradient(ellipse at 20% 30%, rgba(255, 205, 99, 0.13) 0%, transparent 58%);
+  filter: blur(8px);
+  mix-blend-mode: normal;
 }
 
 .night-lamp-switch {
@@ -1594,7 +1599,7 @@ onMounted(async () => {
 }
 
 .night-lamp-active .lamp-bulb {
-  background: #ffd96d;
-  box-shadow: 0 0 18px 7px rgba(255, 217, 109, 0.42), 0 0 44px 16px rgba(255, 199, 79, 0.18);
+  background: #d0a94f;
+  box-shadow: 0 0 10px 4px rgba(255, 217, 109, 0.2), 0 0 30px 12px rgba(255, 199, 79, 0.065);
 }
 </style>
