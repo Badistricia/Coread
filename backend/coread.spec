@@ -43,6 +43,14 @@ hiddenimports = [
     # standard library used at runtime
     "tkinter",
     "tkinter.ttk",
+    # system tray icon
+    "pystray",
+    "pystray._base",
+    "pystray._win32",
+    "pystray._darwin",
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageDraw",
 ]
 
 a = Analysis(

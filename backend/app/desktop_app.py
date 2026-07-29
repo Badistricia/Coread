@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Desktop mode FastAPI application.
-Differs from main.py in that it also serves the compiled frontend
-static files so no separate Node dev server is needed.
+Serves the compiled Vue frontend static files + all API routes.
 """
 import os
 import sys
@@ -15,7 +14,6 @@ from app.api.routes import chat
 
 app = FastAPI(title="CoRead API", version="0.1.0")
 
-# Desktop mode: frontend is served from the same origin, so wildcard is fine.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,18 +30,40 @@ async def health():
     return {"status": "ok"}
 
 
-# ------------------------------------------------------------------
-# Static file serving (frontend dist)
-# ------------------------------------------------------------------
-if getattr(sys, "frozen", False):
-    # Running inside a PyInstaller bundle: files are extracted to _MEIPASS
-    _static_root = os.path.join(sys._MEIPASS, "frontend_dist")  # type: ignore[attr-defined]
-else:
-    # Development fallback: look for frontend/dist relative to repo root
-    _repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    _static_root = os.path.join(_repo_root, "frontend", "dist")
+# ── Static file serving ────────────────────────────────────────────────────────
 
-if os.path.isdir(_static_root):
+
+def _find_static_root() -> str | None:
+    """
+    Locate the compiled frontend dist directory.
+    PyInstaller (onedir) extracts data files into sys._MEIPASS.
+    We try multiple candidate paths to be resilient across PyInstaller versions.
+    """
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        meipass = getattr(sys, "_MEIPASS", exe_dir)
+        candidates = [
+            os.path.join(meipass, "frontend_dist"),
+            os.path.join(exe_dir, "frontend_dist"),
+            os.path.join(exe_dir, "_internal", "frontend_dist"),
+        ]
+    else:
+        # Development fallback
+        repo_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        candidates = [os.path.join(repo_root, "frontend", "dist")]
+
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+_static_root = _find_static_root()
+
+if _static_root:
+    # Mount /assets so hashed filenames (JS/CSS) are served with correct headers
     _assets_dir = os.path.join(_static_root, "assets")
     if os.path.isdir(_assets_dir):
         app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
@@ -54,8 +74,15 @@ if os.path.isdir(_static_root):
 
     @app.get("/{full_path:path}")
     async def _serve_spa(full_path: str):
-        # Serve a real file if it exists, otherwise fall back to index.html (SPA routing)
         candidate = os.path.join(_static_root, full_path)
         if os.path.isfile(candidate):
             return FileResponse(candidate)
         return FileResponse(os.path.join(_static_root, "index.html"))
+else:
+    # Fallback: tell user what's wrong instead of a cryptic 404
+    @app.get("/")
+    async def _no_frontend():
+        return {
+            "error": "frontend_dist not found",
+            "hint": "Run `npm run build` in the frontend directory first.",
+        }

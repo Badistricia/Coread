@@ -43,6 +43,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
+          pip install -r requirements-desktop.txt
           pip install pyinstaller
 
       # 3. Bundle everything into a self-contained directory via PyInstaller
@@ -99,6 +100,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
+          pip install -r requirements-desktop.txt
           pip install pyinstaller
 
       # 3. Bundle everything into a macOS .app via PyInstaller
