@@ -16,6 +16,8 @@ block_cipher = None
 
 # Data files to bundle alongside the executable
 datas = [
+    # Character configuration
+    ("characters.json", "."),
     # Backend prompt templates
     ("app/prompts", "app/prompts"),
     # Compiled frontend (must exist before running pyinstaller)
@@ -67,7 +69,6 @@ a = Analysis(
         "matplotlib",
         "numpy",
         "pandas",
-        "PIL",
         "scipy",
         "IPython",
         "jupyter",

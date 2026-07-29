@@ -10,7 +10,27 @@ from pathlib import Path
 from typing import Any
 
 
-CHARACTER_CONFIG_PATH = Path(__file__).resolve().parents[2] / "characters.json"
+import os
+import sys
+
+def _get_character_config_path() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        exe_dir = os.path.dirname(sys.executable)
+        candidates = [
+            Path(meipass) / "characters.json",
+            Path(exe_dir) / "characters.json",
+            Path(exe_dir) / "_internal" / "characters.json",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p
+        return Path(meipass) / "characters.json"
+    else:
+        return Path(__file__).resolve().parents[2] / "characters.json"
+
+
+CHARACTER_CONFIG_PATH = _get_character_config_path()
 
 
 def load_characters() -> dict[str, dict[str, Any]]:
