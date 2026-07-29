@@ -44,9 +44,9 @@ Source: "..\..\backend\dist\CoRead\*"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\CoRead AI";                    Filename: "{app}\CoRead.exe"
+Name: "{group}\CoRead AI";                    Filename: "{app}\CoRead.exe"; IconFilename: "{app}\resources\icon.ico"
 Name: "{group}\{cm:UninstallProgram,CoRead AI}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\CoRead AI";              Filename: "{app}\CoRead.exe"; Tasks: desktopicon
+Name: "{autodesktop}\CoRead AI";              Filename: "{app}\CoRead.exe"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"
 
 [Run]
 ; Offer to launch right after installation
