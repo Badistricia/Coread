@@ -54,9 +54,9 @@ def _find_static_root() -> str | None:
         log.info(f"[desktop_app] frozen=False, repo_root={repo_root}")
 
     for path in candidates:
-        exists = os.path.isdir(path)
-        log.info(f"[desktop_app] candidate: {path}  -> exists={exists}")
-        if exists:
+        has_index = os.path.isfile(os.path.join(path, "index.html"))
+        log.info(f"[desktop_app] candidate: {path} -> has_index={has_index}")
+        if has_index:
             log.info(f"[desktop_app] using static root: {path}")
             return path
 

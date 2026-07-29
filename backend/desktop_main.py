@@ -63,7 +63,6 @@ def save_config(data: dict) -> None:
 
 def _kill_port(port: int) -> None:
     """Kill whatever process is listening on the given port."""
-    # Check if port is actually in use first
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         if s.connect_ex(("127.0.0.1", port)) != 0:
             log.info(f"Port {port} is free.")
@@ -83,8 +82,7 @@ def _kill_port(port: int) -> None:
                     if pid.isdigit():
                         subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
                         log.info(f"Killed PID {pid} on port {port}")
-                        time.sleep(0.8)
-                        return
+                        break
         else:
             result = subprocess.run(
                 ["lsof", "-ti", f":{port}"],
@@ -95,9 +93,17 @@ def _kill_port(port: int) -> None:
                 if pid_str.isdigit():
                     os.kill(int(pid_str), signal.SIGKILL)
                     log.info(f"Killed PID {pid_str} on port {port}")
-            time.sleep(0.5)
     except Exception as e:
         log.warning(f"Failed to kill process on port {port}: {e}")
+
+    # Wait for port to be released
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                log.info(f"Port {port} confirmed free.")
+                return
+        time.sleep(0.3)
 
 
 # ── First-run dialog ───────────────────────────────────────────────────────────
@@ -191,7 +197,7 @@ def _run_tray(on_open_fn, on_log_fn, on_quit_fn) -> None:
         "CoRead AI", img, "CoRead AI — 正在运行",
         menu=pystray.Menu(
             pystray.MenuItem("打开 CoRead AI", on_open_fn, default=True),
-            pystray.MenuItem(pystray.Menu.SEPARATOR),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("查看启动日志", on_log_fn),
             pystray.MenuItem("退出", on_quit_fn),
         ),
@@ -245,11 +251,15 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1)
-            log.info("Server is ready.")
-            return True
+            req = urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1)
+            if req.status == 200:
+                data = json.loads(req.read().decode("utf-8"))
+                if data.get("status") == "ok":
+                    log.info("Server is ready.")
+                    return True
         except Exception:
-            time.sleep(0.4)
+            pass
+        time.sleep(0.4)
     log.error("Server did not become ready within timeout.")
     return False
 

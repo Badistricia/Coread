@@ -44,7 +44,7 @@ def _find_static_root() -> str | None:
         candidates = [os.path.join(repo_root, "frontend", "dist")]
 
     for path in candidates:
-        if os.path.isdir(path):
+        if os.path.isfile(os.path.join(path, "index.html")):
             return path
     return None
 
