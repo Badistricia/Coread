@@ -1,16 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-CoRead AI — Desktop Entry Point
-
-Flow:
-  1. First run → show tkinter config dialog
-  2. Apply saved config to env vars
-  3. Start FastAPI (uvicorn) in a background thread
-  4. Wait for server ready, open browser
-  5. Show system tray icon (pystray) — keeps process alive, lets user quit
+CoRead AI — Desktop Entry Point (with file logging for diagnostics)
 """
 import json
+import logging
 import os
 import sys
 import threading
@@ -23,6 +17,25 @@ from tkinter import ttk
 
 PORT = 8010
 CONFIG_FILE = Path.home() / ".coread" / "config.json"
+LOG_FILE = Path.home() / ".coread" / "coread.log"
+
+
+# ── Logging setup ──────────────────────────────────────────────────────────────
+
+
+def _setup_logging() -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_FILE, encoding="utf-8", mode="w"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+
+log = logging.getLogger("coread")
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -33,7 +46,8 @@ def load_config() -> dict | None:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            log.warning(f"Failed to load config: {e}")
             return None
     return None
 
@@ -48,7 +62,6 @@ def save_config(data: dict) -> None:
 
 
 def show_first_run_dialog() -> dict | None:
-    """Returns config dict or None if user skipped."""
     result: dict = {"skipped": False, "config": {}}
 
     root = tk.Tk()
@@ -122,36 +135,25 @@ def show_first_run_dialog() -> dict | None:
 
 
 def _make_tray_image():
-    """Generate a simple book-shaped icon with PIL."""
     from PIL import Image, ImageDraw
 
     size = 128
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    # Rounded background
     draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=28, fill=(99, 102, 241))
-
-    # Book shape: left page
     draw.rectangle([22, 28, 58, 100], fill="white")
-    # Book shape: right page
     draw.rectangle([62, 28, 98, 100], fill="white")
-    # Spine
     draw.rectangle([57, 24, 63, 104], fill=(180, 184, 245))
-    # Lines on pages (decorative)
     for y in range(40, 90, 10):
         draw.line([(28, y), (52, y)], fill=(200, 200, 220), width=2)
         draw.line([(68, y), (92, y)], fill=(200, 200, 220), width=2)
-
     return img
 
 
-def run_tray(on_open_fn, on_quit_fn):
-    """Run the system tray icon (blocks until quit)."""
+def run_tray(on_open_fn, on_log_fn, on_quit_fn):
     import pystray
 
     img = _make_tray_image()
-
     icon = pystray.Icon(
         "CoRead AI",
         img,
@@ -159,6 +161,7 @@ def run_tray(on_open_fn, on_quit_fn):
         menu=pystray.Menu(
             pystray.MenuItem("打开 CoRead AI", on_open_fn, default=True),
             pystray.MenuItem(pystray.Menu.SEPARATOR),
+            pystray.MenuItem("查看启动日志", on_log_fn),
             pystray.MenuItem("退出", on_quit_fn),
         ),
     )
@@ -178,8 +181,12 @@ def _apply_env(config: dict) -> None:
 
 
 def _start_server() -> None:
-    import uvicorn
-    uvicorn.run("app.desktop_app:app", host="127.0.0.1", port=PORT, log_level="warning")
+    try:
+        import uvicorn
+        log.info(f"Starting uvicorn on 127.0.0.1:{PORT}")
+        uvicorn.run("app.desktop_app:app", host="127.0.0.1", port=PORT, log_level="info")
+    except Exception as e:
+        log.exception(f"Server failed to start: {e}")
 
 
 def _wait_for_server(timeout: float = 20.0) -> bool:
@@ -187,9 +194,11 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
     while time.time() < deadline:
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1)
+            log.info("Server is ready.")
             return True
         except Exception:
             time.sleep(0.4)
+    log.error("Server did not become ready within timeout.")
     return False
 
 
@@ -197,39 +206,72 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
 
 
 def main() -> None:
+    _setup_logging()
+
+    log.info("=" * 60)
+    log.info(f"CoRead AI starting up")
+    log.info(f"Python: {sys.version}")
+    log.info(f"Frozen (PyInstaller): {getattr(sys, 'frozen', False)}")
     if getattr(sys, "frozen", False):
+        log.info(f"sys.executable: {sys.executable}")
+        log.info(f"sys._MEIPASS:   {getattr(sys, '_MEIPASS', 'N/A')}")
+        log.info(f"exe dir:        {os.path.dirname(sys.executable)}")
         sys.path.insert(0, sys._MEIPASS)  # type: ignore[attr-defined]
+    log.info(f"Log file: {LOG_FILE}")
+    log.info("=" * 60)
 
     config = load_config()
+    log.info(f"Config loaded: {bool(config)}")
 
     if config is None:
+        log.info("First run — showing config dialog")
         new_config = show_first_run_dialog()
         if new_config is not None:
             save_config(new_config)
             config = new_config
+            log.info("Config saved from first-run dialog")
+        else:
+            log.info("User skipped first-run dialog")
 
     if config:
         _apply_env(config)
+        log.info("Env vars applied from config")
 
-    # Start FastAPI server in background daemon thread
     server_thread = threading.Thread(target=_start_server, daemon=True)
     server_thread.start()
 
-    _wait_for_server()
-    webbrowser.open(f"http://127.0.0.1:{PORT}")
+    ready = _wait_for_server()
+    log.info(f"Server ready: {ready}")
 
-    # System tray keeps the process alive and gives user a way to quit
+    webbrowser.open(f"http://127.0.0.1:{PORT}")
+    log.info(f"Browser opened: http://127.0.0.1:{PORT}")
+
     def on_open(icon, item):
         webbrowser.open(f"http://127.0.0.1:{PORT}")
 
+    def on_log(icon, item):
+        # Open the log file in the system default text editor
+        import subprocess
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(LOG_FILE))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(LOG_FILE)])
+            else:
+                subprocess.Popen(["xdg-open", str(LOG_FILE)])
+        except Exception as e:
+            log.error(f"Failed to open log file: {e}")
+
     def on_quit(icon, item):
+        log.info("User quit from tray")
         icon.stop()
         os._exit(0)
 
     try:
-        run_tray(on_open, on_quit)
-    except Exception:
-        # pystray unavailable (e.g. headless CI) — fall back to blocking on server
+        log.info("Starting system tray icon")
+        run_tray(on_open, on_log, on_quit)
+    except Exception as e:
+        log.exception(f"Tray icon failed: {e}")
         server_thread.join()
 
 

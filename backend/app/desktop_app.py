@@ -34,11 +34,9 @@ async def health():
 
 
 def _find_static_root() -> str | None:
-    """
-    Locate the compiled frontend dist directory.
-    PyInstaller (onedir) extracts data files into sys._MEIPASS.
-    We try multiple candidate paths to be resilient across PyInstaller versions.
-    """
+    import logging
+    log = logging.getLogger("coread.desktop_app")
+
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
         meipass = getattr(sys, "_MEIPASS", exe_dir)
@@ -47,17 +45,24 @@ def _find_static_root() -> str | None:
             os.path.join(exe_dir, "frontend_dist"),
             os.path.join(exe_dir, "_internal", "frontend_dist"),
         ]
+        log.info(f"[desktop_app] frozen=True, exe_dir={exe_dir}, _MEIPASS={meipass}")
     else:
-        # Development fallback
         repo_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
         candidates = [os.path.join(repo_root, "frontend", "dist")]
+        log.info(f"[desktop_app] frozen=False, repo_root={repo_root}")
 
     for path in candidates:
-        if os.path.isdir(path):
+        exists = os.path.isdir(path)
+        log.info(f"[desktop_app] candidate: {path}  -> exists={exists}")
+        if exists:
+            log.info(f"[desktop_app] using static root: {path}")
             return path
+
+    log.error(f"[desktop_app] frontend_dist NOT FOUND. Tried: {candidates}")
     return None
+
 
 
 _static_root = _find_static_root()
