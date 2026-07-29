@@ -17,6 +17,7 @@ AppUpdatesURL=https://github.com/Badistricia/Coread/releases
 DefaultDirName={autopf}\CoRead AI
 DefaultGroupName=CoRead AI
 ; Uninstall icon points to the main exe
+SetupIconFile=..\..\backend\resources\icon.ico
 UninstallDisplayIcon={app}\CoRead.exe
 ; Output
 OutputDir=dist

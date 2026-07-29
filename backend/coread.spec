@@ -22,6 +22,8 @@ datas = [
     ("app/prompts", "app/prompts"),
     # Compiled frontend (must exist before running pyinstaller)
     ("../frontend/dist", "frontend_dist"),
+    # Application icons
+    ("resources", "resources"),
 ]
 
 # Modules that PyInstaller's static analysis misses
@@ -97,6 +99,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="resources/icon.ico",
 )
 
 coll = COLLECT(
