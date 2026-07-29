@@ -20,19 +20,49 @@ CONFIG_FILE = Path.home() / ".coread" / "config.json"
 LOG_FILE = Path.home() / ".coread" / "coread.log"
 
 
+class _DummyWriter:
+    def write(self, buf: str) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+
+if sys.stdout is None:
+    sys.stdout = _DummyWriter()  # type: ignore[assignment]
+if sys.stderr is None:
+    sys.stderr = _DummyWriter()  # type: ignore[assignment]
+
+
 # ── Logging ────────────────────────────────────────────────────────────────────
 
 
 def _setup_logging() -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handlers: list[logging.Handler] = [
+        logging.FileHandler(LOG_FILE, encoding="utf-8", mode="w")
+    ]
+    if sys.stdout is not None and not isinstance(sys.stdout, _DummyWriter):
+        handlers.append(logging.StreamHandler(sys.stdout))
+
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_FILE, encoding="utf-8", mode="w"),
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=handlers,
     )
+
+    def _handle_exception(exc_type, exc_value, exc_traceback):
+        log.critical("Unhandled main thread exception:", exc_info=(exc_type, exc_value, exc_traceback))
+
+    sys.excepthook = _handle_exception
+
+    if hasattr(threading, "excepthook"):
+        def _thread_exception(args):
+            log.critical(
+                f"Unhandled thread exception in {args.thread.name}:",
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        threading.excepthook = _thread_exception
 
 
 log = logging.getLogger("coread")
@@ -249,7 +279,16 @@ def _start_server() -> None:
         import uvicorn
         from app.desktop_app import app
         log.info(f"Starting uvicorn with desktop_app instance on 127.0.0.1:{PORT}")
-        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
+        config = uvicorn.Config(
+            app=app,
+            host="127.0.0.1",
+            port=PORT,
+            log_level="info",
+            log_config=None,
+        )
+        server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None
+        server.run()
     except Exception as e:
         log.exception(f"Server crashed: {e}")
 
