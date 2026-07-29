@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-CoRead AI — Desktop Entry Point (with file logging for diagnostics)
-"""
+"""CoRead AI — Desktop Entry Point"""
 import json
 import logging
 import os
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -20,7 +20,7 @@ CONFIG_FILE = Path.home() / ".coread" / "config.json"
 LOG_FILE = Path.home() / ".coread" / "coread.log"
 
 
-# ── Logging setup ──────────────────────────────────────────────────────────────
+# ── Logging ────────────────────────────────────────────────────────────────────
 
 
 def _setup_logging() -> None:
@@ -38,7 +38,7 @@ def _setup_logging() -> None:
 log = logging.getLogger("coread")
 
 
-# ── Config helpers ─────────────────────────────────────────────────────────────
+# ── Config ─────────────────────────────────────────────────────────────────────
 
 
 def load_config() -> dict | None:
@@ -58,7 +58,49 @@ def save_config(data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# ── First-run dialog (tkinter) ─────────────────────────────────────────────────
+# ── Kill stale process on port ─────────────────────────────────────────────────
+
+
+def _kill_port(port: int) -> None:
+    """Kill whatever process is listening on the given port."""
+    # Check if port is actually in use first
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", port)) != 0:
+            log.info(f"Port {port} is free.")
+            return
+
+    log.warning(f"Port {port} is already in use — killing stale process.")
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True, text=True,
+            )
+            for line in result.stdout.splitlines():
+                if f":{port}" in line and ("LISTENING" in line or "LISTEN" in line):
+                    parts = line.strip().split()
+                    pid = parts[-1]
+                    if pid.isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                        log.info(f"Killed PID {pid} on port {port}")
+                        time.sleep(0.8)
+                        return
+        else:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True,
+            )
+            import signal
+            for pid_str in result.stdout.strip().splitlines():
+                if pid_str.isdigit():
+                    os.kill(int(pid_str), signal.SIGKILL)
+                    log.info(f"Killed PID {pid_str} on port {port}")
+            time.sleep(0.5)
+    except Exception as e:
+        log.warning(f"Failed to kill process on port {port}: {e}")
+
+
+# ── First-run dialog ───────────────────────────────────────────────────────────
 
 
 def show_first_run_dialog() -> dict | None:
@@ -67,7 +109,6 @@ def show_first_run_dialog() -> dict | None:
     root = tk.Tk()
     root.title("CoRead AI — 首次配置")
     root.resizable(False, False)
-
     w, h = 500, 360
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
@@ -81,8 +122,7 @@ def show_first_run_dialog() -> dict | None:
     ttk.Label(
         outer,
         text="配置 LLM API 以启用 AI 对话（留空则稍后在应用内通过设置按钮配置）",
-        font=("Segoe UI", 9),
-        foreground="#666666",
+        font=("Segoe UI", 9), foreground="#666666",
     ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 20))
 
     def _row(label: str, row: int, default: str = "", show: str = "") -> tk.StringVar:
@@ -90,8 +130,9 @@ def show_first_run_dialog() -> dict | None:
             row=row, column=0, sticky="w", pady=6
         )
         var = tk.StringVar(value=default)
-        entry = ttk.Entry(outer, textvariable=var, width=38, show=show)
-        entry.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=6)
+        ttk.Entry(outer, textvariable=var, width=38, show=show).grid(
+            row=row, column=1, sticky="ew", padx=(12, 0), pady=6
+        )
         return var
 
     api_key_var = _row("LLM API Key", 2, show="*")
@@ -99,12 +140,9 @@ def show_first_run_dialog() -> dict | None:
     model_var = _row("Model 名称", 4, "qwen-plus")
 
     ttk.Label(
-        outer,
-        text="支持通义千问、OpenAI 及其它兼容 OpenAI 格式的接口",
-        font=("Segoe UI", 8),
-        foreground="#999999",
+        outer, text="支持通义千问、OpenAI 及其它兼容 OpenAI 格式的接口",
+        font=("Segoe UI", 8), foreground="#999999",
     ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(2, 20))
-
     outer.columnconfigure(1, weight=1)
 
     def on_confirm() -> None:
@@ -123,20 +161,16 @@ def show_first_run_dialog() -> dict | None:
     btn_frame.grid(row=6, column=0, columnspan=2, sticky="e")
     ttk.Button(btn_frame, text="跳过，稍后在应用内配置", command=on_skip).pack(side=tk.LEFT, padx=(0, 10))
     ttk.Button(btn_frame, text="确认启动", command=on_confirm).pack(side=tk.LEFT)
-
     root.mainloop()
 
-    if result["skipped"]:
-        return None
-    return result["config"]
+    return None if result["skipped"] else result["config"]
 
 
-# ── System tray icon ───────────────────────────────────────────────────────────
+# ── Tray icon ──────────────────────────────────────────────────────────────────
 
 
 def _make_tray_image():
     from PIL import Image, ImageDraw
-
     size = 128
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -150,14 +184,11 @@ def _make_tray_image():
     return img
 
 
-def run_tray(on_open_fn, on_log_fn, on_quit_fn):
+def _run_tray(on_open_fn, on_log_fn, on_quit_fn) -> None:
     import pystray
-
     img = _make_tray_image()
     icon = pystray.Icon(
-        "CoRead AI",
-        img,
-        "CoRead AI — 正在运行",
+        "CoRead AI", img, "CoRead AI — 正在运行",
         menu=pystray.Menu(
             pystray.MenuItem("打开 CoRead AI", on_open_fn, default=True),
             pystray.MenuItem(pystray.Menu.SEPARATOR),
@@ -166,6 +197,26 @@ def run_tray(on_open_fn, on_log_fn, on_quit_fn):
         ),
     )
     icon.run()
+
+
+def _run_taskbar_fallback(on_open_fn, on_quit_fn) -> None:
+    """Fallback window when pystray is unavailable."""
+    root = tk.Tk()
+    root.title("CoRead AI")
+    root.geometry("220x70")
+    root.resizable(False, False)
+    # Keep on top so it's visible
+    root.attributes("-topmost", True)
+    root.protocol("WM_DELETE_WINDOW", lambda: None)  # Disable close button
+
+    frame = ttk.Frame(root, padding=12)
+    frame.pack(fill=tk.BOTH, expand=True)
+    ttk.Label(frame, text="CoRead AI 正在运行", font=("Segoe UI", 9)).pack(pady=(0, 6))
+    btn_row = ttk.Frame(frame)
+    btn_row.pack()
+    ttk.Button(btn_row, text="打开", command=on_open_fn, width=8).pack(side=tk.LEFT, padx=4)
+    ttk.Button(btn_row, text="退出", command=on_quit_fn, width=8).pack(side=tk.LEFT, padx=4)
+    root.mainloop()
 
 
 # ── Server ─────────────────────────────────────────────────────────────────────
@@ -186,7 +237,7 @@ def _start_server() -> None:
         log.info(f"Starting uvicorn on 127.0.0.1:{PORT}")
         uvicorn.run("app.desktop_app:app", host="127.0.0.1", port=PORT, log_level="info")
     except Exception as e:
-        log.exception(f"Server failed to start: {e}")
+        log.exception(f"Server crashed: {e}")
 
 
 def _wait_for_server(timeout: float = 20.0) -> bool:
@@ -207,15 +258,14 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
 
 def main() -> None:
     _setup_logging()
-
     log.info("=" * 60)
-    log.info(f"CoRead AI starting up")
+    log.info("CoRead AI starting up")
     log.info(f"Python: {sys.version}")
     log.info(f"Frozen (PyInstaller): {getattr(sys, 'frozen', False)}")
     if getattr(sys, "frozen", False):
-        log.info(f"sys.executable: {sys.executable}")
-        log.info(f"sys._MEIPASS:   {getattr(sys, '_MEIPASS', 'N/A')}")
-        log.info(f"exe dir:        {os.path.dirname(sys.executable)}")
+        log.info(f"sys.executable : {sys.executable}")
+        log.info(f"sys._MEIPASS   : {getattr(sys, '_MEIPASS', 'N/A')}")
+        log.info(f"exe dir        : {os.path.dirname(sys.executable)}")
         sys.path.insert(0, sys._MEIPASS)  # type: ignore[attr-defined]
     log.info(f"Log file: {LOG_FILE}")
     log.info("=" * 60)
@@ -237,6 +287,9 @@ def main() -> None:
         _apply_env(config)
         log.info("Env vars applied from config")
 
+    # Kill any stale server from a previous run before binding our port
+    _kill_port(PORT)
+
     server_thread = threading.Thread(target=_start_server, daemon=True)
     server_thread.start()
 
@@ -246,12 +299,10 @@ def main() -> None:
     webbrowser.open(f"http://127.0.0.1:{PORT}")
     log.info(f"Browser opened: http://127.0.0.1:{PORT}")
 
-    def on_open(icon, item):
+    def on_open(*_):
         webbrowser.open(f"http://127.0.0.1:{PORT}")
 
-    def on_log(icon, item):
-        # Open the log file in the system default text editor
-        import subprocess
+    def on_log(*_):
         try:
             if sys.platform == "win32":
                 os.startfile(str(LOG_FILE))
@@ -262,17 +313,22 @@ def main() -> None:
         except Exception as e:
             log.error(f"Failed to open log file: {e}")
 
-    def on_quit(icon, item):
-        log.info("User quit from tray")
-        icon.stop()
+    def on_quit(*_):
+        log.info("User quit from tray/window")
         os._exit(0)
 
+    # Try pystray first; fall back to a plain tkinter window if it fails
+    log.info("Starting system tray icon (pystray)")
     try:
-        log.info("Starting system tray icon")
-        run_tray(on_open, on_log, on_quit)
+        _run_tray(on_open, on_log, on_quit)
     except Exception as e:
-        log.exception(f"Tray icon failed: {e}")
-        server_thread.join()
+        log.exception(f"pystray failed: {e}")
+        log.info("Falling back to tkinter status window")
+        try:
+            _run_taskbar_fallback(on_open, on_quit)
+        except Exception as e2:
+            log.exception(f"Taskbar fallback also failed: {e2}")
+            server_thread.join()
 
 
 if __name__ == "__main__":
