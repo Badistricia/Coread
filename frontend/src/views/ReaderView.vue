@@ -8,7 +8,7 @@ import { useReaderStore, type BookType } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 import { useUiStore } from '@/stores/uiStore'
-import { parseTxt, decodeText, paginateText } from '@/utils/reader'
+import { parseBookFile, parseTxt, paginateText } from '@/utils/reader'
 import { saveBook, loadBook, saveProgress, loadProgress } from '@/utils/storage'
 
 // 导入拆分出的组件
@@ -375,9 +375,7 @@ async function onFileUploaded(event: Event) {
 
   isUploading.value = true
   try {
-    const arrayBuffer = await file.arrayBuffer()
-    const rawText = decodeText(arrayBuffer)
-    const parsed = parseTxt(file.name, rawText)
+    const { parsed, rawText } = await parseBookFile(file)
     
     // 保存至本地 Store 与 IndexedDB
     readerStore.setBook('demo', parsed.title, parsed.chapters)
@@ -397,7 +395,8 @@ async function onFileUploaded(event: Event) {
     await triggerSceneOnce('start_reading', '我准备开始读这本书了，陪我进入状态。')
   } catch (err) {
     console.error('导入失败：', err)
-    alert('导入失败，请检查文件格式是否正确。')
+    const message = err instanceof Error ? err.message : '请检查文件格式是否正确。'
+    alert(`导入失败：${message}`)
   } finally {
     isUploading.value = false
     if (fileInput.value) fileInput.value.value = ''
@@ -1067,7 +1066,7 @@ onMounted(async () => {
         <input
           type="file"
           ref="fileInput"
-          accept=".txt"
+          accept=".txt,.pdf,.epub"
           class="hidden"
           @change="onFileUploaded"
         />
@@ -1180,7 +1179,7 @@ onMounted(async () => {
           </div>
           <h3 class="text-lg font-bold text-[var(--color-read-title)]">开始你的 CoRead 之旅</h3>
           <p class="text-sm text-[var(--color-read-text)] opacity-70 max-w-sm">
-            导入一份 TXT 小说，与你选择的伴侣一起沉浸式共读，他会在阅读过程中为你提供温暖的对话与情绪价值。
+            导入一份 TXT / PDF / EPUB 小说，与你选择的伴侣一起沉浸式共读，他会在阅读过程中为你提供温暖的对话与情绪价值。
           </p>
           <div class="relative" @click.stop>
             <button
@@ -1213,7 +1212,7 @@ onMounted(async () => {
             @click="fileInput?.click()"
             class="px-6 py-2.5 rounded-full theme-bg-primary text-white text-sm font-semibold theme-bg-primary-hover shadow-md hover:scale-105 transition-all duration-300"
           >
-            导入一本 TXT 书籍
+            导入一本书籍
           </button>
         </div>
 
