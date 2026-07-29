@@ -24,7 +24,7 @@ app.include_router(chat.router, prefix="/api")
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "app": "coread"}
 
 
 # ── Static file serving for SPA frontend ──────────────────────────────────────
@@ -52,17 +52,4 @@ def _find_static_root() -> str | None:
 _static_root = _find_static_root()
 
 if _static_root:
-    _assets_dir = os.path.join(_static_root, "assets")
-    if os.path.isdir(_assets_dir):
-        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
-
-    @app.get("/")
-    async def _serve_index():
-        return FileResponse(os.path.join(_static_root, "index.html"))
-
-    @app.get("/{full_path:path}")
-    async def _serve_spa(full_path: str):
-        candidate = os.path.join(_static_root, full_path)
-        if os.path.isfile(candidate):
-            return FileResponse(candidate)
-        return FileResponse(os.path.join(_static_root, "index.html"))
+    app.mount("/", StaticFiles(directory=_static_root, html=True), name="static")

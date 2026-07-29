@@ -73,16 +73,22 @@ def _kill_port(port: int) -> None:
         if sys.platform == "win32":
             result = subprocess.run(
                 ["netstat", "-ano"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, errors="ignore"
             )
+            pids = set()
             for line in result.stdout.splitlines():
-                if f":{port}" in line and ("LISTENING" in line or "LISTEN" in line):
-                    parts = line.strip().split()
-                    pid = parts[-1]
-                    if pid.isdigit():
-                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
-                        log.info(f"Killed PID {pid} on port {port}")
-                        break
+                line_str = line.strip()
+                if "LISTEN" in line_str:
+                    parts = line_str.split()
+                    if len(parts) >= 5:
+                        local_addr = parts[1]
+                        if local_addr.endswith(f":{port}"):
+                            pid = parts[-1]
+                            if pid.isdigit() and int(pid) > 0 and int(pid) != os.getpid():
+                                pids.add(pid)
+            for pid in pids:
+                log.info(f"Killing PID {pid} on port {port}")
+                subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
         else:
             result = subprocess.run(
                 ["lsof", "-ti", f":{port}"],
@@ -90,7 +96,7 @@ def _kill_port(port: int) -> None:
             )
             import signal
             for pid_str in result.stdout.strip().splitlines():
-                if pid_str.isdigit():
+                if pid_str.isdigit() and int(pid_str) != os.getpid():
                     os.kill(int(pid_str), signal.SIGKILL)
                     log.info(f"Killed PID {pid_str} on port {port}")
     except Exception as e:
@@ -104,6 +110,7 @@ def _kill_port(port: int) -> None:
                 log.info(f"Port {port} confirmed free.")
                 return
         time.sleep(0.3)
+    log.warning(f"Port {port} could not be freed after timeout.")
 
 
 # ── First-run dialog ───────────────────────────────────────────────────────────
@@ -254,7 +261,7 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
             req = urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1)
             if req.status == 200:
                 data = json.loads(req.read().decode("utf-8"))
-                if data.get("status") == "ok":
+                if data.get("status") == "ok" and data.get("app") == "coread":
                     log.info("Server is ready.")
                     return True
         except Exception:
