@@ -234,8 +234,9 @@ def _apply_env(config: dict) -> None:
 def _start_server() -> None:
     try:
         import uvicorn
-        log.info(f"Starting uvicorn on 127.0.0.1:{PORT}")
-        uvicorn.run("app.desktop_app:app", host="127.0.0.1", port=PORT, log_level="info")
+        from app.desktop_app import app
+        log.info(f"Starting uvicorn with desktop_app instance on 127.0.0.1:{PORT}")
+        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
     except Exception as e:
         log.exception(f"Server crashed: {e}")
 
