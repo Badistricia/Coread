@@ -42,11 +42,14 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Source: "..\..\backend\dist\CoRead\*"; \
     DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\backend\resources\icon.ico"; \
+    DestDir: "{app}\resources"; \
+    Flags: ignoreversion
 
 [Icons]
-Name: "{group}\CoRead AI";                    Filename: "{app}\CoRead.exe"; IconFilename: "{app}\resources\icon.ico"
+Name: "{group}\CoRead AI";                    Filename: "{app}\CoRead.exe"; IconFilename: "{app}\CoRead.exe"
 Name: "{group}\{cm:UninstallProgram,CoRead AI}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\CoRead AI";              Filename: "{app}\CoRead.exe"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"
+Name: "{autodesktop}\CoRead AI";              Filename: "{app}\CoRead.exe"; Tasks: desktopicon; IconFilename: "{app}\CoRead.exe"
 
 [Run]
 ; Offer to launch right after installation
