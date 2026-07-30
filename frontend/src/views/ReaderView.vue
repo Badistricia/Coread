@@ -9,6 +9,7 @@ import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 import { useUiStore } from '@/stores/uiStore'
 import { parseBookFile, parseTxt, paginateText } from '@/utils/reader'
+import { cleanAssistantContent } from '@/utils/chat'
 import { saveBook, loadBook, saveProgress, loadProgress } from '@/utils/storage'
 
 // 导入拆分出的组件
@@ -286,7 +287,7 @@ async function onAsk(data: { text: string; question: string }) {
   window.getSelection()?.removeAllRanges()
 
   const contextText = readerStore.currentPageContent || ''
-  const chapterText = readerStore.currentChapter?.content || ''
+  const chapterText = readerStore.currentChapterReadContent || ''
   await chatStore.streamResponse(
     data.question,
     data.text,
@@ -645,7 +646,7 @@ async function sendFollowUp() {
   followUpInput.value = ''
   
   const contextText = readerStore.currentPageContent || ''
-  const chapterText = readerStore.currentChapter?.content || ''
+  const chapterText = readerStore.currentChapterReadContent || ''
   
   await chatStore.streamResponse(
     text,
@@ -727,10 +728,6 @@ async function removeQuoteDiscussionMark() {
   notify('研讨划线已取消')
 }
 
-function cleanContent(content: string) {
-  return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
-}
-
 function escapeHtmlAttr(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -810,7 +807,7 @@ async function maybeTriggerNightReminder(pageTurnInterval: number) {
       '已经有些晚了，轻轻提醒我休息一下。',
       '',
       readerStore.currentPageContent || '',
-      readerStore.currentChapter?.content || '',
+      readerStore.currentChapterReadContent || '',
       readerStore.book.id,
       companionStore.currentCompanionId,
       readerStore.currentChapterIndex + 1,
@@ -1371,7 +1368,7 @@ onMounted(async () => {
               msg.isStreaming ? 'typewriter-loading' : ''
             ]"
           >
-            <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
+            <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanAssistantContent(msg.content) }}</p>
           </div>
         </div>
 

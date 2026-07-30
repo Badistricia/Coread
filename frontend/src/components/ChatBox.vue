@@ -3,6 +3,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReaderStore } from '@/stores/readerStore'
+import { cleanAssistantContent } from '@/utils/chat'
 import SessionManager from '@/components/SessionManager.vue'
 import type { ChatScene } from '@/stores/chatStore'
 
@@ -79,7 +80,7 @@ function send() {
 
   // 获取当前阅读段落作为上下文
   const contextText = readerStore.currentPageContent || ''
-  const chapterText = readerStore.currentChapter?.content || ''
+  const chapterText = readerStore.currentChapterReadContent || ''
   
   chatStore.streamResponse(
     userText,
@@ -103,7 +104,7 @@ function sendQuickAction(scene: ChatScene, message: string) {
     message,
     quoteText,
     readerStore.currentPageContent || '',
-    readerStore.currentChapter?.content || '',
+    readerStore.currentChapterReadContent || '',
     readerStore.book.id,
     companionStore.currentCompanionId,
     readerStore.currentChapterIndex + 1,
@@ -121,12 +122,6 @@ function clearCurrentSession() {
   chatStore.clearCurrentSession(readerStore.book.id, companionStore.currentCompanionId)
 }
 
-/**
- * 限制展示字符
- */
-function cleanContent(content: string) {
-  return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
-}
 </script>
 
 <template>
@@ -176,7 +171,7 @@ function cleanContent(content: string) {
             “{{ msg.quote }}”
           </div>
           
-          <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanContent(msg.content) }}</p>
+          <p class="whitespace-pre-line">{{ msg.role === 'user' ? msg.content : cleanAssistantContent(msg.content) }}</p>
         </div>
       </template>
       

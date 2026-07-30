@@ -117,6 +117,11 @@ export const useReaderStore = defineStore('reader', () => {
     return currentChapterPages.value[pageIndex] || ''
   })
 
+  const currentChapterReadContent = computed<string>(() => {
+    const pageIndex = Math.min(currentPageIndex.value, totalPages.value - 1)
+    return currentChapterPages.value.slice(0, pageIndex + 1).join('\n')
+  })
+
   // ── 限制当前页码不越界 ──
   function clampCurrentPage() {
     if (currentPageIndex.value >= totalPages.value) {
@@ -253,6 +258,7 @@ export const useReaderStore = defineStore('reader', () => {
     currentChapter,
     totalPages,
     currentPageContent,
+    currentChapterReadContent,
     fontSize,
     themeStyle,
     isNightLampOn,

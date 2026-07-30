@@ -41,6 +41,7 @@ class ChatRequest(BaseModel):
     current_local_time: str
     daily_read_minutes: int
     current_chapter: int
+    book_title: str = ""
     companion_id: str = "luchen"
     history: list[ChatMessage] = []
     quote: str = ""  # 用户选中的划线原文
@@ -69,7 +70,7 @@ async def chat(req: ChatRequest):
         companion_id=req.companion_id,
         current_local_time=req.current_local_time,
         daily_read_minutes=req.daily_read_minutes,
-        book_title="",
+        book_title=req.book_title,
         current_chapter=req.current_chapter,
         chapter_summaries="",
         quote=req.quote,

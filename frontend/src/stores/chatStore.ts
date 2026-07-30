@@ -6,6 +6,7 @@ import { useReaderStore } from '@/stores/readerStore'
 import { useCompanionStore } from '@/stores/companionStore'
 import { useReadingRecordsStore } from '@/stores/readingRecordsStore'
 import { useEnvStore } from '@/stores/envStore'
+import { cleanAssistantContent } from '@/utils/chat'
 import type { BookType } from '@/stores/readerStore'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -45,10 +46,6 @@ export interface StreamResponseOptions {
   scene?: ChatScene
   bookType?: BookType
   managerPrompt?: string
-}
-
-function cleanForPrompt(content: string) {
-  return content.replace(/<annotation>.*?<\/annotation>/gs, '').trim()
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -198,9 +195,16 @@ export const useChatStore = defineStore('chat', () => {
     // 1. 构建当前会话的多轮历史
     const historyPayload = currentSession.value.messages
       .filter((msg) => !msg.isStreaming)
+      .filter((msg) => {
+        if (msg.chapterIndex === undefined) return true
+        if (msg.chapterIndex !== readerStore.currentChapterIndex) {
+          return msg.chapterIndex < readerStore.currentChapterIndex
+        }
+        return (msg.pageIndex ?? 0) <= readerStore.currentPageIndex
+      })
       .slice(-12)
       .map((msg) => {
-        let textContent = cleanForPrompt(msg.content)
+        let textContent = cleanAssistantContent(msg.content)
         if (msg.quote && msg.role === 'user') {
           textContent = `[用户划线原文: “${msg.quote}”] ${textContent}`
         }
@@ -242,6 +246,7 @@ export const useChatStore = defineStore('chat', () => {
           chapter_text: chapterText,
           current_local_time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
           daily_read_minutes: readerStore.getDailyReadMinutes(),
+          book_title: readerStore.book?.title || '',
           current_chapter: currentChapter,
           companion_id: companionId,
           history: historyPayload,
@@ -340,7 +345,7 @@ export const useChatStore = defineStore('chat', () => {
                   pageIndex: readerStore.currentPageIndex,
                   quote: quoteText,
                   userMessage: userMsg,
-                  aiMessage: cleanForPrompt(lastMsg),
+                  aiMessage: cleanAssistantContent(lastMsg),
                   createdAt: new Date().toISOString()
                 })
               } catch (writeErr) {
